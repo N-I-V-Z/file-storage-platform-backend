@@ -13,6 +13,8 @@ export interface ValidatedEnvironment {
   minDiskFreeBytes: number;
   maxConcurrentUploads: number;
   uploadTimeoutMs: number;
+  maxConcurrentDownloads: number;
+  downloadTimeoutMs: number;
   corsOrigins: string[];
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
@@ -128,6 +130,20 @@ export function validateEnvironment(
     1000,
     3_600_000,
   );
+  const maxConcurrentDownloads = integerLimit(
+    source,
+    'MAX_CONCURRENT_DOWNLOADS',
+    16,
+    1,
+    256,
+  );
+  const downloadTimeoutMs = integerLimit(
+    source,
+    'DOWNLOAD_TIMEOUT_MS',
+    600_000,
+    1000,
+    3_600_000,
+  );
 
   const corsOrigins = required(source, 'CORS_ORIGINS')
     .split(',')
@@ -163,6 +179,8 @@ export function validateEnvironment(
     minDiskFreeBytes,
     maxConcurrentUploads,
     uploadTimeoutMs,
+    maxConcurrentDownloads,
+    downloadTimeoutMs,
     corsOrigins,
     jwtAccessSecret,
     jwtRefreshSecret,

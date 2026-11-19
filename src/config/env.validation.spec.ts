@@ -27,6 +27,8 @@ describe('validateEnvironment', () => {
       minDiskFreeBytes: 1024 * 1024 * 1024,
       maxConcurrentUploads: 4,
       uploadTimeoutMs: 600_000,
+      maxConcurrentDownloads: 16,
+      downloadTimeoutMs: 600_000,
       corsOrigins: ['http://localhost:3000', 'https://app.example.com'],
       jwtAccessSecret: valid.JWT_ACCESS_SECRET,
       jwtRefreshSecret: valid.JWT_REFRESH_SECRET,
