@@ -7,9 +7,15 @@ import { AuthController } from './auth.controller.js';
 import { AuthService } from './auth.service.js';
 import { SessionsRepository } from './sessions.repository.js';
 import { JwtAuthGuard } from './auth.guard.js';
+import { ThrottlerModule } from '@nestjs/throttler';
 
 @Module({
-  imports: [UsersModule, DatabaseModule, JwtModule.register({})],
+  imports: [
+    UsersModule,
+    DatabaseModule,
+    JwtModule.register({}),
+    ThrottlerModule.forRoot([{ ttl: 15 * 60 * 1000, limit: 5 }]),
+  ],
   controllers: [AuthController],
   providers: [
     AuthService,

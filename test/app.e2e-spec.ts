@@ -370,6 +370,29 @@ describe('AppController (e2e)', () => {
     }
   });
 
+  it('limits repeated sign-in attempts', async () => {
+    const email = `limit-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/login')
+          .send({ email, password: 'wrong-password' })
+          .expect(401);
+      }
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'wrong-password' })
+        .expect(429);
+      await request(app.getHttpServer()).get('/health').expect(200);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
   afterEach(async () => {
     await app.close();
   });

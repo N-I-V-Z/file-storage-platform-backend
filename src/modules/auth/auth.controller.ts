@@ -6,7 +6,9 @@ import {
   Post,
   Req,
   Res,
+  UseGuards,
 } from '@nestjs/common';
+import { ThrottlerGuard } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
@@ -32,12 +34,14 @@ export class AuthController {
 
   @Post('register')
   @Public()
+  @UseGuards(ThrottlerGuard)
   register(@Body() body: RegisterDto) {
     return this.users.register(body.email, body.password);
   }
 
   @Post('login')
   @Public()
+  @UseGuards(ThrottlerGuard)
   @HttpCode(200)
   async login(
     @Body() body: LoginDto,
