@@ -8,6 +8,7 @@ import { AuthService } from './auth.service.js';
 import { SessionsRepository } from './sessions.repository.js';
 import { JwtAuthGuard } from './auth.guard.js';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { TrustedOriginGuard } from './trusted-origin.guard.js';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
   providers: [
     AuthService,
     SessionsRepository,
+    TrustedOriginGuard,
     { provide: APP_GUARD, useClass: JwtAuthGuard },
   ],
 })

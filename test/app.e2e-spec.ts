@@ -266,6 +266,33 @@ describe('AppController (e2e)', () => {
     await request(app.getHttpServer()).post('/api/v1/auth/refresh').expect(401);
   });
 
+  it('rejects a refresh request from an untrusted browser origin', async () => {
+    const email = `origin-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      const login = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'long-test-password' })
+        .expect(200);
+      const cookie = String(login.headers['set-cookie']).split(';')[0];
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookie)
+        .set('Origin', 'https://untrusted.example')
+        .expect(403);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookie)
+        .set('Origin', 'http://localhost:3000')
+        .expect(200);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
   it('does not revoke a session for an unrelated invalid token', async () => {
     const email = `invalid-refresh-${randomUUID()}@example.com`;
     try {

@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
+import { TrustedOriginGuard } from './trusted-origin.guard.js';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
@@ -54,6 +55,7 @@ export class AuthController {
 
   @Post('refresh')
   @Public()
+  @UseGuards(TrustedOriginGuard)
   @HttpCode(200)
   async refresh(
     @Req() request: Request,
