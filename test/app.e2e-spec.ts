@@ -64,7 +64,16 @@ describe('AppController (e2e)', () => {
   });
 
   it('keeps health probes outside the versioned API', async () => {
-    await request(app.getHttpServer()).get('/api/v1/health').expect(404);
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/health?token=private')
+      .expect(404);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: { code: 'NOT_FOUND', details: [] },
+      path: '/api/v1/health',
+    });
+    expect(response.body.timestamp).toEqual(expect.any(String));
+    expect(JSON.stringify(response.body)).not.toContain('private');
   });
 
   it('/ready (GET) checks PostgreSQL and Redis', () => {
@@ -79,13 +88,20 @@ describe('AppController (e2e)', () => {
       new Error('private connection detail'),
     );
 
-    await request(app.getHttpServer())
+    const response = await request(app.getHttpServer())
       .get('/ready')
-      .expect(503)
-      .expect({
-        status: 'unavailable',
-        services: { postgres: 'up', redis: 'down' },
-      });
+      .expect(503);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        details: [{ postgres: 'up', redis: 'down' }],
+      },
+      path: '/ready',
+    });
+    expect(JSON.stringify(response.body)).not.toContain(
+      'private connection detail',
+    );
   });
 
   it('/ready (GET) reports PostgreSQL as down', async () => {
@@ -93,13 +109,20 @@ describe('AppController (e2e)', () => {
       new Error('private database detail'),
     );
 
-    await request(app.getHttpServer())
+    const response = await request(app.getHttpServer())
       .get('/ready')
-      .expect(503)
-      .expect({
-        status: 'unavailable',
-        services: { postgres: 'down', redis: 'up' },
-      });
+      .expect(503);
+    expect(response.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'SERVICE_UNAVAILABLE',
+        details: [{ postgres: 'down', redis: 'up' }],
+      },
+      path: '/ready',
+    });
+    expect(JSON.stringify(response.body)).not.toContain(
+      'private database detail',
+    );
   });
 
   afterEach(async () => {

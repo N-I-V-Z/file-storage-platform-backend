@@ -9,12 +9,14 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { NextFunction, Request, Response } from 'express';
 import { ValidatedEnvironment } from './env.validation.js';
+import { ApiExceptionFilter } from './api-exception.filter.js';
 
 export function configureHttp(
   app: INestApplication,
   config: ConfigService<ValidatedEnvironment, true>,
 ): void {
   app.use(helmet());
+  app.useGlobalFilters(new ApiExceptionFilter());
   app.use((_request: Request, response: Response, next: NextFunction) => {
     response.setHeader('x-request-id', randomUUID());
     next();
