@@ -460,6 +460,79 @@ describe('AppController (e2e)', () => {
     }
   });
 
+  it('creates and isolates projects by owner', async () => {
+    const ownerEmail = `project-owner-${randomUUID()}@example.com`;
+    const otherEmail = `project-other-${randomUUID()}@example.com`;
+    try {
+      for (const email of [ownerEmail, otherEmail]) {
+        await request(app.getHttpServer())
+          .post('/api/v1/auth/register')
+          .send({ email, password: 'long-test-password' })
+          .expect(201);
+      }
+      const ownerLogin = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: ownerEmail, password: 'long-test-password' })
+        .expect(200);
+      const otherLogin = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email: otherEmail, password: 'long-test-password' })
+        .expect(200);
+      const ownerAuth = `Bearer ${ownerLogin.body.accessToken as string}`;
+      const otherAuth = `Bearer ${otherLogin.body.accessToken as string}`;
+
+      await request(app.getHttpServer())
+        .post('/api/v1/projects')
+        .send({ name: 'Private files' })
+        .expect(401);
+      const created = await request(app.getHttpServer())
+        .post('/api/v1/projects')
+        .set('Authorization', ownerAuth)
+        .send({ name: '  Private files  ' })
+        .expect(201);
+      const projectId = created.body.id as string;
+      expect(created.body).toMatchObject({ name: 'Private files' });
+      expect(created.body).not.toHaveProperty('ownerId');
+      await request(app.getHttpServer())
+        .get('/api/v1/projects')
+        .set('Authorization', ownerAuth)
+        .expect(200)
+        .expect((response) => expect(response.body).toHaveLength(1));
+      await request(app.getHttpServer())
+        .get('/api/v1/projects')
+        .set('Authorization', otherAuth)
+        .expect(200)
+        .expect([]);
+      await request(app.getHttpServer())
+        .get(`/api/v1/projects/${projectId}`)
+        .set('Authorization', otherAuth)
+        .expect(404);
+      await request(app.getHttpServer())
+        .patch(`/api/v1/projects/${projectId}`)
+        .set('Authorization', otherAuth)
+        .send({ name: 'Stolen' })
+        .expect(404);
+      await request(app.getHttpServer())
+        .patch(`/api/v1/projects/${projectId}`)
+        .set('Authorization', ownerAuth)
+        .send({ name: 'Updated files' })
+        .expect(200)
+        .expect((response) => expect(response.body.name).toBe('Updated files'));
+      await request(app.getHttpServer())
+        .delete(`/api/v1/projects/${projectId}`)
+        .set('Authorization', ownerAuth)
+        .expect(204);
+      await request(app.getHttpServer())
+        .get(`/api/v1/projects/${projectId}`)
+        .set('Authorization', ownerAuth)
+        .expect(404);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({
+        where: { email: { in: [ownerEmail, otherEmail] } },
+      });
+    }
+  });
+
   afterEach(async () => {
     await app.close();
   });

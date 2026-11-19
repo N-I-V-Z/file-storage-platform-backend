@@ -1,0 +1,33 @@
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { ProjectsRepository } from './projects.repository.js';
+
+@Injectable()
+export class ProjectsService {
+  constructor(private readonly projects: ProjectsRepository) {}
+
+  create(ownerId: string, name: string) {
+    return this.projects.create(ownerId, name);
+  }
+
+  list(ownerId: string) {
+    return this.projects.list(ownerId);
+  }
+
+  async get(ownerId: string, id: string) {
+    const project = await this.projects.findOwned(ownerId, id);
+    if (!project) throw new NotFoundException('Project not found');
+    return project;
+  }
+
+  async rename(ownerId: string, id: string, name: string) {
+    const project = await this.projects.renameOwned(ownerId, id, name);
+    if (!project) throw new NotFoundException('Project not found');
+    return project;
+  }
+
+  async remove(ownerId: string, id: string) {
+    if (!(await this.projects.deleteOwned(ownerId, id))) {
+      throw new NotFoundException('Project not found');
+    }
+  }
+}
