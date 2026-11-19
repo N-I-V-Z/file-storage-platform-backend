@@ -5,6 +5,8 @@ import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { RedisService } from './../src/infrastructure/redis/redis.service.js';
 import { PrismaService } from './../src/infrastructure/database/prisma.service.js';
+import { configureHttp } from './../src/config/configure-http.js';
+import { ConfigService } from '@nestjs/config';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -15,6 +17,7 @@ describe('AppController (e2e)', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    configureHttp(app, app.get(ConfigService));
     await app.init();
   });
 
@@ -30,6 +33,38 @@ describe('AppController (e2e)', () => {
       .get('/health')
       .expect(200)
       .expect({ status: 'ok' });
+  });
+
+  it('sets request ID, security headers and allowed CORS origin', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/health')
+      .set('Origin', 'http://localhost:3000')
+      .expect(200);
+
+    expect(response.headers['x-request-id']).toMatch(/^[0-9a-f-]{36}$/);
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['access-control-allow-origin']).toBe(
+      'http://localhost:3000',
+    );
+  });
+
+  it('serves the API specification', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/api/docs-json')
+      .expect(200);
+    expect(response.body.info.title).toBe('File Storage Platform API');
+  });
+
+  it('does not grant CORS to an unlisted origin', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/health')
+      .set('Origin', 'https://unlisted.example')
+      .expect(200);
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('keeps health probes outside the versioned API', async () => {
+    await request(app.getHttpServer()).get('/api/v1/health').expect(404);
   });
 
   it('/ready (GET) checks PostgreSQL and Redis', () => {

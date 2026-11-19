@@ -1,5 +1,7 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { AppModule, ObserveInstrument } from './app.module.js';
+import { configureHttp } from './config/configure-http.js';
 import { validateEnvironment } from './config/env.validation.js';
 
 async function bootstrap() {
@@ -7,6 +9,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
   });
+  configureHttp(app, app.get(ConfigService));
   app.enableShutdownHooks();
   await app.listen(environment.port);
 }
