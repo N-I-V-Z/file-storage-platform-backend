@@ -124,4 +124,8 @@ export class AuthService {
       user: session.user,
     };
   }
+
+  async logout(sessionId: string): Promise<void> {
+    await this.sessions.revoke(sessionId);
+  }
 }

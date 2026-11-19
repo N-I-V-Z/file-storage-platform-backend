@@ -253,6 +253,10 @@ describe('AppController (e2e)', () => {
         .post('/api/v1/auth/refresh')
         .set('Cookie', rotatedCookie)
         .expect(401);
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .expect(401);
     } finally {
       await app.get(PrismaService).user.deleteMany({ where: { email } });
     }
@@ -312,6 +316,55 @@ describe('AppController (e2e)', () => {
         .post('/api/v1/auth/refresh')
         .set('Cookie', cookie)
         .expect(401);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
+  it('protects account details and revokes tokens on logout', async () => {
+    const email = `account-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      await request(app.getHttpServer()).get('/api/v1/auth/me').expect(401);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/logout')
+        .expect(401);
+
+      const login = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'long-test-password' })
+        .expect(200);
+      const accessToken = login.body.accessToken as string;
+      const cookie = String(login.headers['set-cookie']).split(';')[0];
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(200)
+        .expect((response) => expect(response.body).toMatchObject({ email }));
+      const [header, payload, signature] = accessToken.split('.');
+      const tamperedToken = `${header}.${payload}.${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`;
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${tamperedToken}`)
+        .expect(401);
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/logout')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Cookie', cookie)
+        .expect(204);
+      await request(app.getHttpServer())
+        .get('/api/v1/auth/me')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookie)
+        .expect(401);
+      await request(app.getHttpServer()).get('/health').expect(200);
     } finally {
       await app.get(PrismaService).user.deleteMany({ where: { email } });
     }

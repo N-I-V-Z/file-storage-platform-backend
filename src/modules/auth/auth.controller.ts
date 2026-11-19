@@ -1,4 +1,12 @@
-import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
@@ -10,6 +18,9 @@ import {
 } from './auth.service.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
+import { Public } from './public.decorator.js';
+import { CurrentUser } from './current-user.decorator.js';
+import type { AuthPrincipal } from './auth.guard.js';
 
 @Controller('auth')
 export class AuthController {
@@ -20,11 +31,13 @@ export class AuthController {
   ) {}
 
   @Post('register')
+  @Public()
   register(@Body() body: RegisterDto) {
     return this.users.register(body.email, body.password);
   }
 
   @Post('login')
+  @Public()
   @HttpCode(200)
   async login(
     @Body() body: LoginDto,
@@ -36,6 +49,7 @@ export class AuthController {
   }
 
   @Post('refresh')
+  @Public()
   @HttpCode(200)
   async refresh(
     @Req() request: Request,
@@ -46,6 +60,26 @@ export class AuthController {
     );
     this.setRefreshCookie(response, result.refreshCookie);
     return { accessToken: result.accessToken, user: result.user };
+  }
+
+  @Get('me')
+  me(@CurrentUser() principal: AuthPrincipal) {
+    return { id: principal.userId, email: principal.email };
+  }
+
+  @Post('logout')
+  @HttpCode(204)
+  async logout(
+    @CurrentUser() principal: AuthPrincipal,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<void> {
+    await this.auth.logout(principal.sessionId);
+    response.clearCookie(REFRESH_COOKIE_NAME, {
+      httpOnly: true,
+      secure: this.config.getOrThrow('nodeEnv') === 'production',
+      sameSite: 'lax',
+      path: '/api/v1/auth',
+    });
   }
 
   private setRefreshCookie(response: Response, value: string): void {
