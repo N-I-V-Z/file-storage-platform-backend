@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { request as httpRequest } from 'node:http';
+import { PassThrough } from 'node:stream';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -75,6 +76,7 @@ describe('private streaming download (e2e)', () => {
     app = module.createNestApplication();
     configureHttp(app, app.get(ConfigService));
     await app.init();
+    await app.listen(0, '127.0.0.1');
     auth = await account(ownerEmail);
     foreignAuth = await account(foreignEmail);
     const project = await request(app.getHttpServer())
@@ -280,11 +282,32 @@ describe('private streaming download (e2e)', () => {
       .expect(503);
   });
 
+  it('streams bytes beyond the preflight buffer without duplication', async () => {
+    const content = Buffer.concat([
+      Buffer.from('%PDF-1.7\n'),
+      Buffer.alloc(256 * 1024, 9),
+    ]);
+    const large = await seedReady(content);
+    const largePath = path().replace(fileId, large.id);
+    const full = await request(app.getHttpServer())
+      .get(largePath)
+      .set('Authorization', auth);
+    expect(full.status).toBe(200);
+    expect(full.body).toEqual(content);
+    const partial = await request(app.getHttpServer())
+      .get(largePath)
+      .set('Authorization', auth)
+      .set('Range', 'bytes=65000-140000');
+    expect(partial.status).toBe(206);
+    expect(partial.body).toEqual(content.subarray(65000, 140001));
+  });
+
   it('limits concurrent downloads and releases the slot after completion', async () => {
     const config = app.get(ConfigService);
     const originalLimit = config.getOrThrow<number>('maxConcurrentDownloads');
     config.set('maxConcurrentDownloads', 1);
-    const open = storage.openObject.bind(storage);
+    const open = (id: string) =>
+      FilesystemStorage.prototype.openObject.call(storage, id);
     let entered!: () => void;
     let release!: () => void;
     const opening = new Promise<void>((resolve) => (entered = resolve));
@@ -325,7 +348,6 @@ describe('private streaming download (e2e)', () => {
     const originalLimit = config.getOrThrow<number>('maxConcurrentDownloads');
     config.set('maxConcurrentDownloads', 1);
     try {
-      await app.listen(0, '127.0.0.1');
       const url = new URL(path().replace(fileId, large.id), await app.getUrl());
       await new Promise<void>((resolve, reject) => {
         const outgoing = httpRequest(
@@ -355,6 +377,119 @@ describe('private streaming download (e2e)', () => {
       }
       expect(recovered).toBe(true);
     } finally {
+      config.set('maxConcurrentDownloads', originalLimit);
+    }
+  });
+
+  it('closes the storage handle when a download times out', async () => {
+    const stalled = await seedReady(Buffer.alloc(128 * 1024, 1));
+    const config = app.get(ConfigService);
+    const originalTimeout = config.getOrThrow<number>('downloadTimeoutMs');
+    config.set('downloadTimeoutMs', 20);
+    const open = (id: string) =>
+      FilesystemStorage.prototype.openObject.call(storage, id);
+    let closeHandle = vi.fn();
+    const spy = vi
+      .spyOn(storage, 'openObject')
+      .mockImplementation(async (id) => {
+        const handle = await open(id);
+        closeHandle = vi.spyOn(handle, 'close');
+        vi.spyOn(handle, 'createReadStream').mockImplementation(
+          () =>
+            new PassThrough() as unknown as ReturnType<
+              typeof handle.createReadStream
+            >,
+        );
+        return handle;
+      });
+    try {
+      const url = new URL(
+        path().replace(fileId, stalled.id),
+        await app.getUrl(),
+      );
+      await new Promise<void>((resolve) => {
+        const outgoing = httpRequest(
+          url,
+          { headers: { Authorization: auth } },
+          (incoming) => {
+            incoming.once('close', resolve);
+            incoming.once('error', () => resolve());
+            incoming.resume();
+          },
+        );
+        outgoing.once('error', () => resolve());
+        outgoing.end();
+      });
+      await vi.waitFor(() => expect(closeHandle).toHaveBeenCalledOnce());
+    } finally {
+      spy.mockRestore();
+      config.set('downloadTimeoutMs', originalTimeout);
+    }
+  });
+
+  it('returns 503 when the first object read fails', async () => {
+    const open = (id: string) =>
+      FilesystemStorage.prototype.openObject.call(storage, id);
+    const spy = vi
+      .spyOn(storage, 'openObject')
+      .mockImplementation(async (id) => {
+        const handle = await open(id);
+        vi.spyOn(handle, 'read').mockRejectedValue(new Error('simulated EIO'));
+        return handle;
+      });
+    try {
+      await request(app.getHttpServer())
+        .get(path())
+        .set('Authorization', auth)
+        .expect(503);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('times out a stalled object open and frees its slot', async () => {
+    const config = app.get(ConfigService);
+    const originalTimeout = config.getOrThrow<number>('downloadTimeoutMs');
+    const originalLimit = config.getOrThrow<number>('maxConcurrentDownloads');
+    config.set('downloadTimeoutMs', 20);
+    config.set('maxConcurrentDownloads', 1);
+    const open = (id: string) =>
+      FilesystemStorage.prototype.openObject.call(storage, id);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const spy = vi
+      .spyOn(storage, 'openObject')
+      .mockImplementation(async (id) => {
+        await gate;
+        return open(id);
+      });
+    try {
+      const url = new URL(path(), await app.getUrl());
+      const outcome = new Promise<string>((resolve) => {
+        const outgoing = httpRequest(
+          url,
+          { headers: { Authorization: auth } },
+          (incoming) => {
+            incoming.once('end', () => resolve('ended'));
+            incoming.once('error', () => resolve('error'));
+            incoming.resume();
+          },
+        );
+        outgoing.once('error', () => resolve('error'));
+        outgoing.end();
+      });
+      expect(
+        await Promise.race([outcome, delay(300).then(() => 'stalled')]),
+      ).not.toBe('stalled');
+      spy.mockRestore();
+      await request(app.getHttpServer())
+        .head(path())
+        .set('Authorization', auth)
+        .expect(200);
+    } finally {
+      release();
+      spy.mockRestore();
+      config.set('downloadTimeoutMs', originalTimeout);
       config.set('maxConcurrentDownloads', originalLimit);
     }
   });

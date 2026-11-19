@@ -1,10 +1,12 @@
 import { pipeline } from 'node:stream/promises';
+import type { FileHandle } from 'node:fs/promises';
 import {
   HttpException,
   HttpStatus,
   Inject,
   Injectable,
   NotFoundException,
+  RequestTimeoutException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -16,6 +18,26 @@ import {
 } from '../../infrastructure/storage/storage-adapter.js';
 import { parseByteRange } from './byte-range.js';
 import { FilesRepository } from './files.repository.js';
+
+function raceAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted)
+    return Promise.reject(new RequestTimeoutException('Download interrupted'));
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () =>
+      reject(new RequestTimeoutException('Download interrupted'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    void operation.then(
+      (value) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
 
 function contentDisposition(filename: string): string {
   const fallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
@@ -61,15 +83,42 @@ export class FileDownloadService {
       );
     }
     this.activeDownloads++;
+    const abort = new AbortController();
+    const onClose = () => {
+      if (!response.writableFinished) abort.abort();
+    };
+    response.once('close', onClose);
+    const timer = setTimeout(
+      () => abort.abort(),
+      this.config.getOrThrow('downloadTimeoutMs'),
+    );
+    timer.unref();
     try {
-      let handle;
+      let handle: FileHandle | undefined;
       try {
-        handle = await this.storage.openObject(file.storageKey);
+        const opening = this.storage.openObject(file.storageKey);
+        void opening
+          .then((lateHandle) => {
+            if (abort.signal.aborted && handle !== lateHandle) {
+              void lateHandle.close().catch(() => undefined);
+            }
+          })
+          .catch(() => undefined);
+        handle = await raceAbort(opening, abort.signal);
       } catch {
+        if (abort.signal.aborted)
+          throw new RequestTimeoutException('Download interrupted');
         throw new ServiceUnavailableException('File object is unavailable');
       }
       try {
-        const stats = await handle.stat();
+        let stats;
+        try {
+          stats = await raceAbort(handle.stat(), abort.signal);
+        } catch {
+          if (abort.signal.aborted)
+            throw new RequestTimeoutException('Download interrupted');
+          throw new ServiceUnavailableException('File object is unavailable');
+        }
         const size = Number(file.sizeBytes);
         if (!stats.isFile() || stats.size !== size) {
           throw new ServiceUnavailableException('File object is inconsistent');
@@ -95,6 +144,32 @@ export class FileDownloadService {
         }
         const start = range?.start ?? 0;
         const end = range?.end ?? size - 1;
+        let firstChunk = Buffer.alloc(0);
+        if (!head && size > 0) {
+          const length = Math.min(end - start + 1, 64 * 1024);
+          firstChunk = Buffer.allocUnsafe(length);
+          let received = 0;
+          try {
+            while (received < length) {
+              const read = await raceAbort(
+                handle.read(
+                  firstChunk,
+                  received,
+                  length - received,
+                  start + received,
+                ),
+                abort.signal,
+              );
+              if (read.bytesRead === 0)
+                throw new Error('Unexpected end of file');
+              received += read.bytesRead;
+            }
+          } catch {
+            if (abort.signal.aborted)
+              throw new RequestTimeoutException('Download interrupted');
+            throw new ServiceUnavailableException('File object is unavailable');
+          }
+        }
         response.status(range ? 206 : 200);
         response.setHeader('Content-Type', file.contentType);
         response.setHeader(
@@ -112,32 +187,36 @@ export class FileDownloadService {
           response.end();
           return;
         }
-        const abort = new AbortController();
-        const onClose = () => {
-          if (!response.writableFinished) abort.abort();
-        };
-        response.once('close', onClose);
-        const timer = setTimeout(
-          () => abort.abort(),
-          this.config.getOrThrow('downloadTimeoutMs'),
-        );
-        timer.unref();
+        if (abort.signal.aborted)
+          throw new RequestTimeoutException('Download interrupted');
         try {
+          response.write(firstChunk);
+          if (start + firstChunk.length > end) {
+            response.end();
+            return;
+          }
           await pipeline(
-            handle.createReadStream({ start, end, autoClose: false }),
+            handle.createReadStream({
+              start: start + firstChunk.length,
+              end,
+              autoClose: false,
+            }),
             response,
             { signal: abort.signal },
           );
         } catch (error) {
           if (!response.destroyed) response.destroy(error as Error);
-        } finally {
-          clearTimeout(timer);
-          response.off('close', onClose);
         }
       } finally {
-        await handle.close();
+        if (abort.signal.aborted) {
+          void handle.close().catch(() => undefined);
+        } else {
+          await handle.close();
+        }
       }
     } finally {
+      clearTimeout(timer);
+      response.off('close', onClose);
       this.activeDownloads--;
     }
   }
