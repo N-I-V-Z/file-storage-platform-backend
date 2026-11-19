@@ -154,6 +154,40 @@ describe('streaming upload (e2e)', () => {
       })
       .expect(201);
     expect(uploaded.body.data.status).toBe('ready');
+    const secondProject = await request(app.getHttpServer())
+      .post('/api/v1/projects')
+      .set('Authorization', auth)
+      .send({ name: 'Other project' })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${secondProject.body.data.id as string}/files`)
+      .set('Authorization', `ApiKey ${writer.body.data.token as string}`)
+      .attach('file', bytes, {
+        filename: 'x.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(403);
+    const foreignEmail = `upload-foreign-${randomUUID()}@example.com`;
+    emails.push(foreignEmail);
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ email: foreignEmail, password: 'long-test-password' })
+      .expect(201);
+    const foreignLogin = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: foreignEmail, password: 'long-test-password' })
+      .expect(200);
+    await request(app.getHttpServer())
+      .post(path)
+      .set(
+        'Authorization',
+        `Bearer ${foreignLogin.body.data.accessToken as string}`,
+      )
+      .attach('file', bytes, {
+        filename: 'x.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(404);
     const config = app.get(ConfigService);
     const getOrThrow = config.getOrThrow.bind(config);
     const exactLimit = vi
