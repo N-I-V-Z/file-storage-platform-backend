@@ -5,6 +5,7 @@ import {
   BadRequestException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   PayloadTooLargeException,
   RequestTimeoutException,
@@ -13,7 +14,10 @@ import { ConfigService } from '@nestjs/config';
 import Busboy from 'busboy';
 import type { Request } from 'express';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
-import { FilesystemStorage } from '../../infrastructure/storage/filesystem-storage.js';
+import {
+  STORAGE_ADAPTER,
+  type StorageAdapter,
+} from '../../infrastructure/storage/storage-adapter.js';
 import { QuotasRepository } from '../quotas/quotas.repository.js';
 import { FileInspector } from './file-inspector.js';
 import { matchesSignature, supportsMimeType } from './file-signatures.js';
@@ -29,7 +33,7 @@ export class FilesService {
 
   constructor(
     private readonly config: ConfigService<ValidatedEnvironment, true>,
-    private readonly storage: FilesystemStorage,
+    @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     private readonly quotas: QuotasRepository,
   ) {}
 

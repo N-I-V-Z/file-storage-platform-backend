@@ -11,6 +11,10 @@ import { AppModule } from '../src/app.module.js';
 import { configureHttp } from '../src/config/configure-http.js';
 import { PrismaService } from '../src/infrastructure/database/prisma.service.js';
 import { FilesystemStorage } from '../src/infrastructure/storage/filesystem-storage.js';
+import {
+  STORAGE_ADAPTER,
+  type StorageAdapter,
+} from '../src/infrastructure/storage/storage-adapter.js';
 import { QuotasRepository } from '../src/modules/quotas/quotas.repository.js';
 import { UploadReconciler } from '../src/modules/files/upload-reconciler.js';
 
@@ -22,7 +26,7 @@ describe('upload reconciliation (e2e)', () => {
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'fsp-reconcile-'));
     const module = await Test.createTestingModule({ imports: [AppModule] })
-      .overrideProvider(FilesystemStorage)
+      .overrideProvider(STORAGE_ADAPTER)
       .useFactory({ factory: () => new FilesystemStorage(root) })
       .compile();
     app = module.createNestApplication();
@@ -51,7 +55,7 @@ describe('upload reconciliation (e2e)', () => {
       data: { ownerId: user.id, name: 'Reconcile' },
     });
     const quota = app.get(QuotasRepository);
-    const storage = app.get(FilesystemStorage);
+    const storage = app.get<StorageAdapter>(STORAGE_ADAPTER);
     const keys: string[] = [];
     for (const promoted of [false, true]) {
       const id = randomUUID();

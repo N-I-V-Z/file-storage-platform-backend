@@ -1,10 +1,14 @@
 import {
   Injectable,
+  Inject,
   Logger,
   OnApplicationBootstrap,
   OnModuleDestroy,
 } from '@nestjs/common';
-import { FilesystemStorage } from '../../infrastructure/storage/filesystem-storage.js';
+import {
+  STORAGE_ADAPTER,
+  type StorageAdapter,
+} from '../../infrastructure/storage/storage-adapter.js';
 import { QuotasRepository } from '../quotas/quotas.repository.js';
 
 @Injectable()
@@ -17,7 +21,7 @@ export class UploadReconciler
 
   constructor(
     private readonly quotas: QuotasRepository,
-    private readonly storage: FilesystemStorage,
+    @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {

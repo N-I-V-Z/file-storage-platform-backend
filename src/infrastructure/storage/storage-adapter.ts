@@ -1,5 +1,7 @@
 import type { WriteStream } from 'node:fs';
 
+export const STORAGE_ADAPTER = Symbol('STORAGE_ADAPTER');
+
 export interface StorageAdapter {
   init(): Promise<void>;
   createTemporary(id: string): WriteStream;
