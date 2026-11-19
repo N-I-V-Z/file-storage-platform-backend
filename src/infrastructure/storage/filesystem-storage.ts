@@ -1,5 +1,5 @@
 import { createWriteStream } from 'node:fs';
-import { lstat, mkdir, rename, statfs, unlink } from 'node:fs/promises';
+import { lstat, mkdir, open, rename, statfs, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { StorageAdapter } from './storage-adapter.js';
 
@@ -43,6 +43,10 @@ export class FilesystemStorage implements StorageAdapter {
   objectPath(id: string): string {
     this.requireId(id);
     return join(this.root, 'objects', id.slice(0, 2), id);
+  }
+
+  openObject(id: string) {
+    return open(this.objectPath(id), 'r');
   }
 
   async promote(id: string): Promise<void> {

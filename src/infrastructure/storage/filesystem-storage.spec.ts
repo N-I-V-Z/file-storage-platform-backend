@@ -37,6 +37,9 @@ describe('FilesystemStorage', () => {
     await pipeline(Readable.from(['file bytes']), storage.createTemporary(id));
     await storage.promote(id);
     expect(await readFile(storage.objectPath(id), 'utf8')).toBe('file bytes');
+    const handle = await storage.openObject(id);
+    expect((await handle.stat()).size).toBe(10);
+    await handle.close();
     await storage.remove(id);
     expect(await readdir(join(root, 'temporary'))).toEqual([]);
     expect(() => storage.objectPath('../escape')).toThrow();
