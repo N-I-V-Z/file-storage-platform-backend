@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ValidatedEnvironment } from '../../config/env.validation.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 
 export interface ReserveUpload {
@@ -12,7 +14,10 @@ export interface ReserveUpload {
 
 @Injectable()
 export class QuotasRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<ValidatedEnvironment, true>,
+  ) {}
 
   reserve(input: ReserveUpload) {
     return this.prisma.$transaction(async (tx) => {
@@ -32,7 +37,11 @@ export class QuotasRepository {
           originalName: input.originalName,
           contentType: input.contentType,
           reservationBytes: input.reservationBytes,
-          expiresAt: new Date(Date.now() + 15 * 60_000),
+          expiresAt: new Date(
+            Date.now() +
+              this.config.getOrThrow('uploadTimeoutMs') +
+              10 * 60_000,
+          ),
         },
       });
     });

@@ -42,6 +42,11 @@ describe('AppController (e2e)', () => {
       expect(results.filter(Boolean)).toHaveLength(1);
       const accepted = results.find(Boolean);
       expect(accepted).toBeDefined();
+      expect(accepted!.expiresAt.getTime()).toBeGreaterThan(
+        Date.now() +
+          app.get(ConfigService).getOrThrow<number>('uploadTimeoutMs') +
+          9 * 60_000,
+      );
       await quota.finalize(accepted!.id, 40n, 'a'.repeat(64));
       const updated = await prisma.project.findUniqueOrThrow({
         where: { id: project.id },
