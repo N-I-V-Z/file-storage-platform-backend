@@ -5,6 +5,7 @@ import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { RedisService } from './../src/infrastructure/redis/redis.service.js';
 import { PrismaService } from './../src/infrastructure/database/prisma.service.js';
+import { ApiKeysRepository } from './../src/modules/api-keys/api-keys.repository.js';
 import { configureHttp } from './../src/config/configure-http.js';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
@@ -677,6 +678,23 @@ describe('AppController (e2e)', () => {
     } finally {
       await app.get(PrismaService).user.deleteMany({ where: { email } });
     }
+  });
+
+  it('limits repeated invalid API key verification attempts', async () => {
+    const projectId = randomUUID();
+    const token = `fsp_${randomUUID()}_${'A'.repeat(43)}`;
+    const lookups = vi.spyOn(app.get(ApiKeysRepository), 'findForVerification');
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await request(app.getHttpServer())
+        .get(`/api/v1/projects/${projectId}/key-access`)
+        .set('Authorization', `ApiKey ${token}`)
+        .expect(401);
+    }
+    await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/key-access`)
+      .set('Authorization', `ApiKey ${token}`)
+      .expect(429);
+    expect(lookups).toHaveBeenCalledTimes(20);
   });
 
   afterEach(async () => {
