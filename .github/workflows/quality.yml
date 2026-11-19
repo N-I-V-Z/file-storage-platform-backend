@@ -16,6 +16,8 @@ jobs:
       REDIS_URL: redis://127.0.0.1:6379
       STORAGE_ROOT: ./.local-storage
       CORS_ORIGINS: http://localhost:3000
+      JWT_ACCESS_SECRET: ci-only-access-secret-for-tests-0001
+      JWT_REFRESH_SECRET: ci-only-refresh-secret-for-tests-0002
     services:
       postgres:
         image: postgres:17-alpine

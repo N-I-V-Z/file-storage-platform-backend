@@ -10,6 +10,8 @@ const valid = {
   REDIS_URL: 'redis://127.0.0.1:6379',
   STORAGE_ROOT: './.local-storage',
   CORS_ORIGINS: 'http://localhost:3000,https://app.example.com',
+  JWT_ACCESS_SECRET: 'a'.repeat(32),
+  JWT_REFRESH_SECRET: 'b'.repeat(32),
 };
 
 describe('validateEnvironment', () => {
@@ -21,6 +23,8 @@ describe('validateEnvironment', () => {
       redisUrl: valid.REDIS_URL,
       storageRoot: resolve('./.local-storage'),
       corsOrigins: ['http://localhost:3000', 'https://app.example.com'],
+      jwtAccessSecret: valid.JWT_ACCESS_SECRET,
+      jwtRefreshSecret: valid.JWT_REFRESH_SECRET,
     });
   });
 
@@ -46,5 +50,26 @@ describe('validateEnvironment', () => {
         CORS_ORIGINS: 'http://localhost:3000/private',
       }),
     ).toThrow(/CORS_ORIGINS/);
+  });
+
+  it('requires distinct, strong authentication secrets', () => {
+    expect(() =>
+      validateEnvironment({ ...valid, JWT_ACCESS_SECRET: undefined }),
+    ).toThrow(/JWT_ACCESS_SECRET/);
+    expect(() =>
+      validateEnvironment({ ...valid, JWT_ACCESS_SECRET: 'too-short' }),
+    ).toThrow(/JWT_ACCESS_SECRET/);
+    expect(() =>
+      validateEnvironment({
+        ...valid,
+        JWT_ACCESS_SECRET: 'replace-with-random-access-secret',
+      }),
+    ).toThrow(/JWT_ACCESS_SECRET/);
+    expect(() =>
+      validateEnvironment({
+        ...valid,
+        JWT_REFRESH_SECRET: valid.JWT_ACCESS_SECRET,
+      }),
+    ).toThrow(/JWT_REFRESH_SECRET/);
   });
 });

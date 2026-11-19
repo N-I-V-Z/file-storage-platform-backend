@@ -9,11 +9,23 @@ export interface ValidatedEnvironment {
   redisUrl: string;
   storageRoot: string;
   corsOrigins: string[];
+  jwtAccessSecret: string;
+  jwtRefreshSecret: string;
 }
 
 function required(source: EnvironmentSource, name: string): string {
   const value = source[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+function authenticationSecret(source: EnvironmentSource, name: string): string {
+  const value = required(source, name);
+  if (value.length < 32 || value.startsWith('replace-with-')) {
+    throw new Error(
+      `${name} must be a generated secret of at least 32 characters`,
+    );
+  }
   return value;
 }
 
@@ -38,6 +50,11 @@ function connectionUrl(
 export function validateEnvironment(
   source: EnvironmentSource,
 ): ValidatedEnvironment {
+  const jwtAccessSecret = authenticationSecret(source, 'JWT_ACCESS_SECRET');
+  const jwtRefreshSecret = authenticationSecret(source, 'JWT_REFRESH_SECRET');
+  if (jwtAccessSecret === jwtRefreshSecret) {
+    throw new Error('JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET');
+  }
   const nodeEnv = source.NODE_ENV || 'development';
   if (!['development', 'test', 'production'].includes(nodeEnv)) {
     throw new Error('NODE_ENV must be development, test, or production');
@@ -79,5 +96,7 @@ export function validateEnvironment(
     redisUrl: connectionUrl(source, 'REDIS_URL', ['redis:', 'rediss:']),
     storageRoot: resolve(required(source, 'STORAGE_ROOT')),
     corsOrigins,
+    jwtAccessSecret,
+    jwtRefreshSecret,
   };
 }
