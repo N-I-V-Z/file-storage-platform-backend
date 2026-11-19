@@ -258,6 +258,19 @@ describe('private streaming download (e2e)', () => {
       .get(path())
       .set('Authorization', `ApiKey ${token}`)
       .expect(401);
+    const expiring = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/api-keys`)
+      .set('Authorization', auth)
+      .send({ name: 'Expire me', scopes: ['files:read'] })
+      .expect(201);
+    await app.get(PrismaService).apiKey.update({
+      where: { id: expiring.body.data.id as string },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    await request(app.getHttpServer())
+      .get(path())
+      .set('Authorization', `ApiKey ${expiring.body.data.token as string}`)
+      .expect(401);
   });
 
   it('handles empty files and unavailable storage objects', async () => {
