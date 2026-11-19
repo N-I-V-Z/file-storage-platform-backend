@@ -22,10 +22,27 @@ describe('validateEnvironment', () => {
       databaseUrl: valid.DATABASE_URL,
       redisUrl: valid.REDIS_URL,
       storageRoot: resolve('./.local-storage'),
+      maxUploadBytes: 512 * 1024 * 1024,
+      projectQuotaBytes: 10 * 1024 * 1024 * 1024,
+      minDiskFreeBytes: 1024 * 1024 * 1024,
+      maxConcurrentUploads: 4,
+      uploadTimeoutMs: 600_000,
       corsOrigins: ['http://localhost:3000', 'https://app.example.com'],
       jwtAccessSecret: valid.JWT_ACCESS_SECRET,
       jwtRefreshSecret: valid.JWT_REFRESH_SECRET,
     });
+  });
+
+  it('rejects unsafe upload limits', () => {
+    expect(() =>
+      validateEnvironment({ ...valid, MAX_UPLOAD_BYTES: '0' }),
+    ).toThrow(/MAX_UPLOAD_BYTES/);
+    expect(() =>
+      validateEnvironment({ ...valid, PROJECT_QUOTA_BYTES: '100' }),
+    ).toThrow(/PROJECT_QUOTA_BYTES/);
+    expect(() =>
+      validateEnvironment({ ...valid, MAX_CONCURRENT_UPLOADS: '1000' }),
+    ).toThrow(/MAX_CONCURRENT_UPLOADS/);
   });
 
   it('rejects missing database connection before startup', () => {

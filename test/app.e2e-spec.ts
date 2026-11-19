@@ -9,9 +9,77 @@ import { ApiKeysRepository } from './../src/modules/api-keys/api-keys.repository
 import { configureHttp } from './../src/config/configure-http.js';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
+import { QuotasRepository } from './../src/modules/quotas/quotas.repository.js';
+import { ProjectsService } from './../src/modules/projects/projects.service.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
+
+  it('reserves quota atomically across concurrent uploads', async () => {
+    const email = `quota-${randomUUID()}@example.com`;
+    const prisma = app.get(PrismaService);
+    try {
+      const user = await prisma.user.create({
+        data: { email, passwordHash: 'unused' },
+      });
+      const project = await prisma.project.create({
+        data: { ownerId: user.id, name: 'Quota test', quotaBytes: 100n },
+      });
+      const quota = app.get(QuotasRepository);
+      const uploads = [randomUUID(), randomUUID()];
+      const results = await Promise.all(
+        uploads.map((id) =>
+          quota.reserve({
+            id,
+            projectId: project.id,
+            storageKey: randomUUID(),
+            originalName: 'file.pdf',
+            contentType: 'application/pdf',
+            reservationBytes: 60n,
+          }),
+        ),
+      );
+      expect(results.filter(Boolean)).toHaveLength(1);
+      const accepted = results.find(Boolean);
+      expect(accepted).toBeDefined();
+      expect(accepted!.expiresAt.getTime()).toBeGreaterThan(
+        Date.now() +
+          app.get(ConfigService).getOrThrow<number>('uploadTimeoutMs') +
+          9 * 60_000,
+      );
+      await quota.finalize(accepted!.id, 40n, 'a'.repeat(64));
+      const updated = await prisma.project.findUniqueOrThrow({
+        where: { id: project.id },
+      });
+      expect(updated.usedBytes).toBe(40n);
+      expect(updated.reservedBytes).toBe(0n);
+      await expect(
+        app.get(ProjectsService).remove(user.id, project.id),
+      ).rejects.toMatchObject({ status: 409 });
+      const abandonedId = randomUUID();
+      await quota.reserve({
+        id: abandonedId,
+        projectId: project.id,
+        storageKey: randomUUID(),
+        originalName: 'aborted.pdf',
+        contentType: 'application/pdf',
+        reservationBytes: 60n,
+      });
+      expect(await quota.markAbandoned(abandonedId)).toBe(true);
+      expect(await quota.releaseAbandoned(abandonedId)).toBe(true);
+      expect(await quota.releaseAbandoned(abandonedId)).toBe(false);
+      const afterRelease = await prisma.project.findUniqueOrThrow({
+        where: { id: project.id },
+      });
+      expect(afterRelease.usedBytes).toBe(40n);
+      expect(afterRelease.reservedBytes).toBe(0n);
+    } finally {
+      await prisma.storedFile.deleteMany({
+        where: { project: { owner: { email } } },
+      });
+      await prisma.user.deleteMany({ where: { email } });
+    }
+  });
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
