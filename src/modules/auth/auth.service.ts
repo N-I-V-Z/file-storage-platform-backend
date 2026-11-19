@@ -92,11 +92,13 @@ export class AuthService {
     }
 
     const presentedHash = this.hashRefreshToken(refreshSecret);
-    if (this.matchesHash(presentedHash, session.previousRefreshTokenHash)) {
-      await this.sessions.revoke(sessionId);
-      throw new UnauthorizedException('Invalid session');
-    }
     if (!this.matchesHash(presentedHash, session.refreshTokenHash)) {
+      if (
+        this.matchesHash(presentedHash, session.previousRefreshTokenHash) ||
+        (await this.sessions.wasConsumed(sessionId, presentedHash))
+      ) {
+        await this.sessions.revoke(sessionId);
+      }
       throw new UnauthorizedException('Invalid session');
     }
 
@@ -108,11 +110,7 @@ export class AuthService {
       this.hashRefreshToken(nextSecret),
     );
     if (!rotated) {
-      const latest = await this.sessions.findById(sessionId);
-      if (
-        latest &&
-        this.matchesHash(presentedHash, latest.previousRefreshTokenHash)
-      ) {
+      if (await this.sessions.wasConsumed(sessionId, presentedHash)) {
         await this.sessions.revoke(sessionId);
       }
       throw new UnauthorizedException('Invalid session');

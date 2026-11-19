@@ -23,24 +23,38 @@ export class SessionsRepository {
     });
   }
 
+  async wasConsumed(sessionId: string, tokenHash: string): Promise<boolean> {
+    const consumed = await this.prisma.consumedRefreshToken.findUnique({
+      where: { sessionId_tokenHash: { sessionId, tokenHash } },
+      select: { tokenHash: true },
+    });
+    return consumed !== null;
+  }
+
   async rotate(
     id: string,
     currentHash: string,
     nextHash: string,
   ): Promise<boolean> {
-    const result = await this.prisma.session.updateMany({
-      where: {
-        id,
-        refreshTokenHash: currentHash,
-        revokedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      data: {
-        previousRefreshTokenHash: currentHash,
-        refreshTokenHash: nextHash,
-      },
+    return this.prisma.$transaction(async (transaction) => {
+      const result = await transaction.session.updateMany({
+        where: {
+          id,
+          refreshTokenHash: currentHash,
+          revokedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: {
+          previousRefreshTokenHash: currentHash,
+          refreshTokenHash: nextHash,
+        },
+      });
+      if (result.count !== 1) return false;
+      await transaction.consumedRefreshToken.create({
+        data: { sessionId: id, tokenHash: currentHash },
+      });
+      return true;
     });
-    return result.count === 1;
   }
 
   revoke(id: string) {
