@@ -61,10 +61,15 @@ export class ApiKeysRepository {
     });
   }
 
-  touch(id: string) {
-    return this.prisma.apiKey.update({
-      where: { id },
+  async touchIfActive(id: string) {
+    const result = await this.prisma.apiKey.updateMany({
+      where: {
+        id,
+        revokedAt: null,
+        OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+      },
       data: { lastUsedAt: new Date() },
     });
+    return result.count > 0;
   }
 }

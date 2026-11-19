@@ -65,6 +65,7 @@ export class ApiKeysService {
     const digest = createHash('sha256').update(token).digest();
     if (
       !key ||
+      !/^[0-9a-f]{64}$/.test(key.tokenHash) ||
       !timingSafeEqual(digest, Buffer.from(key.tokenHash, 'hex')) ||
       key.revokedAt ||
       (key.expiresAt && key.expiresAt <= new Date())
@@ -73,7 +74,9 @@ export class ApiKeysService {
     }
     if (key.projectId !== projectId || !key.scopes.includes(scope))
       throw new ForbiddenException('API key lacks access');
-    await this.keys.touch(key.id);
+    if (!(await this.keys.touchIfActive(key.id))) {
+      throw new UnauthorizedException('Invalid API key');
+    }
     return key.project;
   }
 }
