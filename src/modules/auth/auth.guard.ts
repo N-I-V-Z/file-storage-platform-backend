@@ -45,6 +45,11 @@ export class JwtAuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
+    await this.authenticate(request);
+    return true;
+  }
+
+  async authenticate(request: AuthenticatedRequest): Promise<void> {
     const [scheme, token, extra] =
       request.headers.authorization?.split(' ') ?? [];
     if (scheme !== 'Bearer' || !token || extra) {
@@ -78,6 +83,5 @@ export class JwtAuthGuard implements CanActivate {
       email: session.user.email,
       sessionId: session.id,
     };
-    return true;
   }
 }

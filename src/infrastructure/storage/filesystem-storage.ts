@@ -19,6 +19,10 @@ export class FilesystemStorage implements StorageAdapter {
     this.root = resolve(root);
   }
 
+  async onModuleInit(): Promise<void> {
+    await this.init();
+  }
+
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     await this.requireDirectory(this.root);
