@@ -11,6 +11,34 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://file_storage:ci-only-password@127.0.0.1:5432/file_storage
+      REDIS_URL: redis://127.0.0.1:6379
+      STORAGE_ROOT: ./.local-storage
+      CORS_ORIGINS: http://localhost:3000
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: file_storage
+          POSTGRES_USER: file_storage
+          POSTGRES_PASSWORD: ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U file_storage -d file_storage"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 3s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -22,6 +50,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+      - run: pnpm db:migrate:deploy
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
