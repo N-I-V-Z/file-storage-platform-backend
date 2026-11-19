@@ -29,7 +29,10 @@ export function configureHttp(
     response.setHeader('x-request-id', randomUUID());
     next();
   });
-  app.enableCors({ origin: config.getOrThrow('corsOrigins') });
+  app.enableCors({
+    origin: config.getOrThrow('corsOrigins'),
+    credentials: true,
+  });
   app.setGlobalPrefix('api', {
     exclude: [
       { path: '/', method: RequestMethod.ALL },

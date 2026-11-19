@@ -179,6 +179,49 @@ describe('AppController (e2e)', () => {
     }
   });
 
+  it('signs in with a protected refresh cookie and hashed session token', async () => {
+    const email = `login-${randomUUID()}@example.com`;
+    const password = 'long-test-password';
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'wrong-password' })
+        .expect(401);
+
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password })
+        .expect(200);
+      expect(response.body.accessToken).toEqual(expect.any(String));
+      expect(response.body.user).toMatchObject({ email });
+      const cookie = String(response.headers['set-cookie']);
+      expect(cookie).toContain('fsp_refresh=');
+      expect(cookie).toContain('HttpOnly');
+      const user = await app.get(PrismaService).user.findUniqueOrThrow({
+        where: { email },
+        include: { sessions: true },
+      });
+      expect(user.sessions).toHaveLength(1);
+      expect(cookie).not.toContain(user.sessions[0].refreshTokenHash);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
+  it('rejects login for an unknown email', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({
+        email: `missing-${randomUUID()}@example.com`,
+        password: 'long-test-password',
+      })
+      .expect(401);
+  });
+
   afterEach(async () => {
     await app.close();
   });
