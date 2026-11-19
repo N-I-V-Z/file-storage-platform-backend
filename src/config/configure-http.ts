@@ -12,6 +12,7 @@ import cookieParser from 'cookie-parser';
 import { NextFunction, Request, Response } from 'express';
 import { ValidatedEnvironment } from './env.validation.js';
 import { ApiExceptionFilter } from './api-exception.filter.js';
+import { ApiResponseInterceptor } from './api-response.interceptor.js';
 
 export function configureHttp(
   app: INestApplication,
@@ -20,6 +21,7 @@ export function configureHttp(
   app.use(helmet());
   app.use(cookieParser());
   app.useGlobalFilters(new ApiExceptionFilter());
+  app.useGlobalInterceptors(new ApiResponseInterceptor());
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

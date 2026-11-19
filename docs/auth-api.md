@@ -1,6 +1,6 @@
 # Authentication API
 
-All routes below use the `/api/v1/auth` prefix. JSON errors use the shared `{ success: false, error, path, timestamp }` envelope.
+All routes below use the `/api/v1/auth` prefix. JSON successes use `{ success: true, data, timestamp }`, with the result shown in the table inside `data`. JSON errors use `{ success: false, error, path, timestamp }`. See `response-contract.md` for exceptions.
 
 | Route | Request | Success |
 | --- | --- | --- |

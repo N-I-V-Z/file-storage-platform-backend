@@ -1,6 +1,6 @@
 # Projects and API keys
 
-All endpoints use `/api/v1`. Project and key management require a bearer access JWT. A user can see or change only projects they own; an unknown or foreign project returns `404`.
+All endpoints use `/api/v1`. JSON successes use `{ success: true, data, timestamp }`, with the result shown in the table inside `data`; `204` responses have no body. Errors use `{ success: false, error, path, timestamp }`. See `response-contract.md`. Project and key management require a bearer access JWT. A user can see or change only projects they own; an unknown or foreign project returns `404`.
 
 | Endpoint | Request | Success |
 | --- | --- | --- |

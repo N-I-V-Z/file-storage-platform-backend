@@ -137,8 +137,13 @@ describe('AppController (e2e)', () => {
           password: 'long-test-password',
         })
         .expect(201);
-      expect(response.body).toMatchObject({ email });
-      expect(response.body.id).toEqual(expect.any(String));
+      expect(response.body).toMatchObject({
+        success: true,
+        data: { email },
+        timestamp: expect.any(String),
+      });
+      expect(response.body.data).toMatchObject({ email });
+      expect(response.body.data.id).toEqual(expect.any(String));
       expect(JSON.stringify(response.body)).not.toContain('password');
       const stored = await app.get(PrismaService).user.findUnique({
         where: { email },
@@ -197,8 +202,13 @@ describe('AppController (e2e)', () => {
         .post('/api/v1/auth/login')
         .send({ email, password })
         .expect(200);
-      expect(response.body.accessToken).toEqual(expect.any(String));
-      expect(response.body.user).toMatchObject({ email });
+      expect(response.body).toMatchObject({
+        success: true,
+        data: { user: { email }, accessToken: expect.any(String) },
+        timestamp: expect.any(String),
+      });
+      expect(response.body.data.accessToken).toEqual(expect.any(String));
+      expect(response.body.data.user).toMatchObject({ email });
       const cookie = String(response.headers['set-cookie']);
       expect(cookie).toContain('fsp_refresh=');
       expect(cookie).toContain('HttpOnly');
@@ -244,7 +254,7 @@ describe('AppController (e2e)', () => {
         ';',
       )[0];
       expect(rotatedCookie).not.toBe(originalCookie);
-      expect(refreshed.body.accessToken).toEqual(expect.any(String));
+      expect(refreshed.body.data.accessToken).toEqual(expect.any(String));
 
       await request(app.getHttpServer())
         .post('/api/v1/auth/refresh')
@@ -256,7 +266,7 @@ describe('AppController (e2e)', () => {
         .expect(401);
       await request(app.getHttpServer())
         .get('/api/v1/auth/me')
-        .set('Authorization', `Bearer ${login.body.accessToken}`)
+        .set('Authorization', `Bearer ${login.body.data.accessToken}`)
         .expect(401);
     } finally {
       await app.get(PrismaService).user.deleteMany({ where: { email } });
@@ -405,13 +415,15 @@ describe('AppController (e2e)', () => {
         .post('/api/v1/auth/login')
         .send({ email, password: 'long-test-password' })
         .expect(200);
-      const accessToken = login.body.accessToken as string;
+      const accessToken = login.body.data.accessToken as string;
       const cookie = String(login.headers['set-cookie']).split(';')[0];
       await request(app.getHttpServer())
         .get('/api/v1/auth/me')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200)
-        .expect((response) => expect(response.body).toMatchObject({ email }));
+        .expect((response) =>
+          expect(response.body.data).toMatchObject({ email }),
+        );
       const [header, payload, signature] = accessToken.split('.');
       const tamperedToken = `${header}.${payload}.${signature[0] === 'A' ? 'B' : 'A'}${signature.slice(1)}`;
       await request(app.getHttpServer())
@@ -479,8 +491,8 @@ describe('AppController (e2e)', () => {
         .post('/api/v1/auth/login')
         .send({ email: otherEmail, password: 'long-test-password' })
         .expect(200);
-      const ownerAuth = `Bearer ${ownerLogin.body.accessToken as string}`;
-      const otherAuth = `Bearer ${otherLogin.body.accessToken as string}`;
+      const ownerAuth = `Bearer ${ownerLogin.body.data.accessToken as string}`;
+      const otherAuth = `Bearer ${otherLogin.body.data.accessToken as string}`;
 
       await request(app.getHttpServer())
         .post('/api/v1/projects')
@@ -491,19 +503,24 @@ describe('AppController (e2e)', () => {
         .set('Authorization', ownerAuth)
         .send({ name: '  Private files  ' })
         .expect(201);
-      const projectId = created.body.id as string;
-      expect(created.body).toMatchObject({ name: 'Private files' });
-      expect(created.body).not.toHaveProperty('ownerId');
+      expect(created.body).toMatchObject({
+        success: true,
+        data: { name: 'Private files' },
+        timestamp: expect.any(String),
+      });
+      const projectId = created.body.data.id as string;
+      expect(created.body.data).toMatchObject({ name: 'Private files' });
+      expect(created.body.data).not.toHaveProperty('ownerId');
       await request(app.getHttpServer())
         .get('/api/v1/projects')
         .set('Authorization', ownerAuth)
         .expect(200)
-        .expect((response) => expect(response.body).toHaveLength(1));
+        .expect((response) => expect(response.body.data).toHaveLength(1));
       await request(app.getHttpServer())
         .get('/api/v1/projects')
         .set('Authorization', otherAuth)
         .expect(200)
-        .expect([]);
+        .expect((response) => expect(response.body.data).toEqual([]));
       await request(app.getHttpServer())
         .get(`/api/v1/projects/${projectId}`)
         .set('Authorization', otherAuth)
@@ -518,7 +535,9 @@ describe('AppController (e2e)', () => {
         .set('Authorization', ownerAuth)
         .send({ name: 'Updated files' })
         .expect(200)
-        .expect((response) => expect(response.body.name).toBe('Updated files'));
+        .expect((response) =>
+          expect(response.body.data.name).toBe('Updated files'),
+        );
       await request(app.getHttpServer())
         .delete(`/api/v1/projects/${projectId}`)
         .set('Authorization', ownerAuth)
@@ -545,13 +564,13 @@ describe('AppController (e2e)', () => {
         .post('/api/v1/auth/login')
         .send({ email, password: 'long-test-password' })
         .expect(200);
-      const auth = `Bearer ${login.body.accessToken as string}`;
+      const auth = `Bearer ${login.body.data.accessToken as string}`;
       const first = await request(app.getHttpServer())
         .post('/api/v1/projects')
         .set('Authorization', auth)
         .send({ name: 'First' })
         .expect(201);
-      const projectId = first.body.id as string;
+      const projectId = first.body.data.id as string;
       await request(app.getHttpServer())
         .post(`/api/v1/projects/${projectId}/api-keys`)
         .send({ name: 'No auth', scopes: ['projects:read'] })
@@ -566,8 +585,13 @@ describe('AppController (e2e)', () => {
         .set('Authorization', auth)
         .send({ name: 'Reader', scopes: ['projects:read', 'files:read'] })
         .expect(201);
-      const keyId = created.body.id as string;
-      const token = created.body.token as string;
+      expect(created.body).toMatchObject({
+        success: true,
+        data: { name: 'Reader', token: expect.any(String) },
+        timestamp: expect.any(String),
+      });
+      const keyId = created.body.data.id as string;
+      const token = created.body.data.token as string;
       expect(token).toMatch(/^fsp_[0-9a-f-]{36}_[A-Za-z0-9_-]{43}$/);
       const stored = await app
         .get(PrismaService)
@@ -577,14 +601,15 @@ describe('AppController (e2e)', () => {
         .get(`/api/v1/projects/${projectId}/api-keys`)
         .set('Authorization', auth)
         .expect(200);
-      expect(listed.body).toHaveLength(1);
+      expect(listed.body.data).toHaveLength(1);
       expect(JSON.stringify(listed.body)).not.toContain(token);
       expect(JSON.stringify(listed.body)).not.toContain(stored.tokenHash);
 
-      await request(app.getHttpServer())
+      const revokeResponse = await request(app.getHttpServer())
         .delete(`/api/v1/projects/${projectId}/api-keys/${keyId}`)
         .set('Authorization', auth)
         .expect(204);
+      expect(revokeResponse.text).toBe('');
       const revoked = await app
         .get(PrismaService)
         .apiKey.findUniqueOrThrow({ where: { id: keyId } });
@@ -605,7 +630,7 @@ describe('AppController (e2e)', () => {
         .post('/api/v1/auth/login')
         .send({ email, password: 'long-test-password' })
         .expect(200);
-      const auth = `Bearer ${login.body.accessToken as string}`;
+      const auth = `Bearer ${login.body.data.accessToken as string}`;
       const projects = [];
       for (const name of ['First', 'Second']) {
         const response = await request(app.getHttpServer())
@@ -613,7 +638,7 @@ describe('AppController (e2e)', () => {
           .set('Authorization', auth)
           .send({ name })
           .expect(201);
-        projects.push(response.body.id as string);
+        projects.push(response.body.data.id as string);
       }
       const [projectId, otherId] = projects;
       const reader = await request(app.getHttpServer())
@@ -621,7 +646,7 @@ describe('AppController (e2e)', () => {
         .set('Authorization', auth)
         .send({ name: 'Reader', scopes: ['projects:read'] })
         .expect(201);
-      const token = reader.body.token as string;
+      const token = reader.body.data.token as string;
       const forged = `${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`;
       await request(app.getHttpServer())
         .get(`/api/v1/projects/${projectId}/key-access`)
@@ -638,10 +663,10 @@ describe('AppController (e2e)', () => {
         .get(`/api/v1/projects/${projectId}/key-access`)
         .set('Authorization', `ApiKey ${token}`)
         .expect(200)
-        .expect((response) => expect(response.body.id).toBe(projectId));
-      const used = await app
-        .get(PrismaService)
-        .apiKey.findUniqueOrThrow({ where: { id: reader.body.id as string } });
+        .expect((response) => expect(response.body.data.id).toBe(projectId));
+      const used = await app.get(PrismaService).apiKey.findUniqueOrThrow({
+        where: { id: reader.body.data.id as string },
+      });
       expect(used.lastUsedAt).not.toBeNull();
       await request(app.getHttpServer())
         .get(`/api/v1/projects/${otherId}/key-access`)
@@ -649,7 +674,7 @@ describe('AppController (e2e)', () => {
         .expect(403);
       await request(app.getHttpServer())
         .delete(
-          `/api/v1/projects/${projectId}/api-keys/${reader.body.id as string}`,
+          `/api/v1/projects/${projectId}/api-keys/${reader.body.data.id as string}`,
         )
         .set('Authorization', auth)
         .expect(204);
@@ -665,15 +690,15 @@ describe('AppController (e2e)', () => {
         .expect(201);
       await request(app.getHttpServer())
         .get(`/api/v1/projects/${projectId}/key-access`)
-        .set('Authorization', `ApiKey ${writer.body.token as string}`)
+        .set('Authorization', `ApiKey ${writer.body.data.token as string}`)
         .expect(403);
       await app.get(PrismaService).apiKey.update({
-        where: { id: writer.body.id as string },
+        where: { id: writer.body.data.id as string },
         data: { expiresAt: new Date(Date.now() - 1000) },
       });
       await request(app.getHttpServer())
         .get(`/api/v1/projects/${projectId}/key-access`)
-        .set('Authorization', `ApiKey ${writer.body.token as string}`)
+        .set('Authorization', `ApiKey ${writer.body.data.token as string}`)
         .expect(401);
     } finally {
       await app.get(PrismaService).user.deleteMany({ where: { email } });
