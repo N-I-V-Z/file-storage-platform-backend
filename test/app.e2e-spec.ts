@@ -553,6 +553,10 @@ describe('AppController (e2e)', () => {
       const projectId = first.body.id as string;
       await request(app.getHttpServer())
         .post(`/api/v1/projects/${projectId}/api-keys`)
+        .send({ name: 'No auth', scopes: ['projects:read'] })
+        .expect(401);
+      await request(app.getHttpServer())
+        .post(`/api/v1/projects/${projectId}/api-keys`)
         .set('Authorization', auth)
         .send({ name: 'Invalid', scopes: ['files:admin'] })
         .expect(400);
@@ -617,6 +621,11 @@ describe('AppController (e2e)', () => {
         .send({ name: 'Reader', scopes: ['projects:read'] })
         .expect(201);
       const token = reader.body.token as string;
+      const forged = `${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`;
+      await request(app.getHttpServer())
+        .get(`/api/v1/projects/${projectId}/key-access`)
+        .set('Authorization', `ApiKey ${forged}`)
+        .expect(401);
       await request(app.getHttpServer())
         .get('/api/v1/projects')
         .set('Authorization', `ApiKey ${token}`)
