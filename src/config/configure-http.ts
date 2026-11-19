@@ -3,6 +3,7 @@ import {
   INestApplication,
   RequestMethod,
   VersioningType,
+  ValidationPipe,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -17,6 +18,13 @@ export function configureHttp(
 ): void {
   app.use(helmet());
   app.useGlobalFilters(new ApiExceptionFilter());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
   app.use((_request: Request, response: Response, next: NextFunction) => {
     response.setHeader('x-request-id', randomUUID());
     next();

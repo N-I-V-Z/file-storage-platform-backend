@@ -7,6 +7,7 @@ import { RedisService } from './../src/infrastructure/redis/redis.service.js';
 import { PrismaService } from './../src/infrastructure/database/prisma.service.js';
 import { configureHttp } from './../src/config/configure-http.js';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -123,6 +124,59 @@ describe('AppController (e2e)', () => {
     expect(JSON.stringify(response.body)).not.toContain(
       'private database detail',
     );
+  });
+
+  it('registers a normalized account without exposing its password hash', async () => {
+    const email = `register-${randomUUID()}@example.com`;
+    try {
+      const response = await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({
+          email: `  ${email.toUpperCase()}  `,
+          password: 'long-test-password',
+        })
+        .expect(201);
+      expect(response.body).toMatchObject({ email });
+      expect(response.body.id).toEqual(expect.any(String));
+      expect(JSON.stringify(response.body)).not.toContain('password');
+      const stored = await app.get(PrismaService).user.findUnique({
+        where: { email },
+      });
+      expect(stored?.passwordHash).not.toBe('long-test-password');
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
+  it('rejects invalid registration input', async () => {
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ email: 'bad', password: 'short', extra: 'unexpected' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        email: `unknown-${randomUUID()}@example.com`,
+        password: 'long-test-password',
+        role: 'admin',
+      })
+      .expect(400);
+  });
+
+  it('rejects duplicate account email', async () => {
+    const email = `duplicate-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email: email.toUpperCase(), password: 'long-test-password' })
+        .expect(409);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
   });
 
   afterEach(async () => {
