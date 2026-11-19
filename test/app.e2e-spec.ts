@@ -533,6 +533,62 @@ describe('AppController (e2e)', () => {
     }
   });
 
+  it('issues and revokes API keys without returning stored secrets', async () => {
+    const email = `key-owner-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      const login = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'long-test-password' })
+        .expect(200);
+      const auth = `Bearer ${login.body.accessToken as string}`;
+      const first = await request(app.getHttpServer())
+        .post('/api/v1/projects')
+        .set('Authorization', auth)
+        .send({ name: 'First' })
+        .expect(201);
+      const projectId = first.body.id as string;
+      await request(app.getHttpServer())
+        .post(`/api/v1/projects/${projectId}/api-keys`)
+        .set('Authorization', auth)
+        .send({ name: 'Invalid', scopes: ['files:admin'] })
+        .expect(400);
+      const created = await request(app.getHttpServer())
+        .post(`/api/v1/projects/${projectId}/api-keys`)
+        .set('Authorization', auth)
+        .send({ name: 'Reader', scopes: ['projects:read', 'files:read'] })
+        .expect(201);
+      const keyId = created.body.id as string;
+      const token = created.body.token as string;
+      expect(token).toMatch(/^fsp_[0-9a-f-]{36}_[A-Za-z0-9_-]{43}$/);
+      const stored = await app
+        .get(PrismaService)
+        .apiKey.findUniqueOrThrow({ where: { id: keyId } });
+      expect(stored.tokenHash).not.toContain(token);
+      const listed = await request(app.getHttpServer())
+        .get(`/api/v1/projects/${projectId}/api-keys`)
+        .set('Authorization', auth)
+        .expect(200);
+      expect(listed.body).toHaveLength(1);
+      expect(JSON.stringify(listed.body)).not.toContain(token);
+      expect(JSON.stringify(listed.body)).not.toContain(stored.tokenHash);
+
+      await request(app.getHttpServer())
+        .delete(`/api/v1/projects/${projectId}/api-keys/${keyId}`)
+        .set('Authorization', auth)
+        .expect(204);
+      const revoked = await app
+        .get(PrismaService)
+        .apiKey.findUniqueOrThrow({ where: { id: keyId } });
+      expect(revoked.revokedAt).not.toBeNull();
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
   afterEach(async () => {
     await app.close();
   });
