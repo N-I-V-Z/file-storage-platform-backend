@@ -8,6 +8,7 @@ import { QuotasModule } from '../quotas/quotas.module.js';
 import { FileUploadGuard } from './file-upload.guard.js';
 import { FilesController } from './files.controller.js';
 import { FilesService } from './files.service.js';
+import { UploadReconciler } from './upload-reconciler.js';
 
 @Module({
   imports: [
@@ -19,6 +20,6 @@ import { FilesService } from './files.service.js';
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
   ],
   controllers: [FilesController],
-  providers: [FilesService, FileUploadGuard],
+  providers: [FilesService, FileUploadGuard, UploadReconciler],
 })
 export class FilesModule {}
