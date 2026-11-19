@@ -111,7 +111,7 @@ export class FilesService {
       try {
         parser = Busboy({
           headers: request.headers,
-          limits: { files: 2, parts: 2, fields: 1, fileSize: maxBytes },
+          limits: { files: 2, parts: 2, fields: 1, fileSize: maxBytes + 1 },
         });
       } catch {
         throw new BadRequestException('Invalid multipart request');

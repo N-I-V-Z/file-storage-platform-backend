@@ -154,6 +154,25 @@ describe('streaming upload (e2e)', () => {
       })
       .expect(201);
     expect(uploaded.body.data.status).toBe('ready');
+    const config = app.get(ConfigService);
+    const getOrThrow = config.getOrThrow.bind(config);
+    const exactLimit = vi
+      .spyOn(config, 'getOrThrow')
+      .mockImplementation((key: string) =>
+        key === 'maxUploadBytes' ? bytes.length : getOrThrow(key),
+      );
+    try {
+      await request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', auth)
+        .attach('file', bytes, {
+          filename: 'exact.pdf',
+          contentType: 'application/pdf',
+        })
+        .expect(201);
+    } finally {
+      exactLimit.mockRestore();
+    }
     await request(app.getHttpServer())
       .post(path)
       .set('Authorization', auth)
@@ -180,8 +199,6 @@ describe('streaming upload (e2e)', () => {
         contentType: 'application/pdf',
       })
       .expect(400);
-    const config = app.get(ConfigService);
-    const getOrThrow = config.getOrThrow.bind(config);
     const limit = vi
       .spyOn(config, 'getOrThrow')
       .mockImplementation((key: string) =>
@@ -235,11 +252,11 @@ describe('streaming upload (e2e)', () => {
       .project.findUniqueOrThrow({
         where: { id: projectId },
       });
-    expect(projectAfter.usedBytes).toBe(BigInt(bytes.length));
+    expect(projectAfter.usedBytes).toBe(BigInt(bytes.length * 2));
     expect(projectAfter.reservedBytes).toBe(0n);
     expect(
       await app.get(PrismaService).storedFile.count({ where: { projectId } }),
-    ).toBe(1);
+    ).toBe(2);
     expect(await readdir(join(root, 'temporary'))).toEqual([]);
   });
 

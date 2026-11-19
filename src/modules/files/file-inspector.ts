@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Transform, type TransformCallback } from 'node:stream';
+import { PayloadTooLargeException } from '@nestjs/common';
 
 export class FileInspector extends Transform {
   private readonly hash = createHash('sha256');
@@ -17,7 +18,7 @@ export class FileInspector extends Transform {
   ): void {
     this.sizeBytes += chunk.length;
     if (this.sizeBytes > this.maxBytes) {
-      callback(new Error('File size limit exceeded'));
+      callback(new PayloadTooLargeException('Upload exceeds file size limit'));
       return;
     }
     this.hash.update(chunk);
