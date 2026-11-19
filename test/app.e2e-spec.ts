@@ -4,6 +4,7 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from './../src/app.module.js';
 import { RedisService } from './../src/infrastructure/redis/redis.service.js';
+import { PrismaService } from './../src/infrastructure/database/prisma.service.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -49,6 +50,20 @@ describe('AppController (e2e)', () => {
       .expect({
         status: 'unavailable',
         services: { postgres: 'up', redis: 'down' },
+      });
+  });
+
+  it('/ready (GET) reports PostgreSQL as down', async () => {
+    vi.spyOn(app.get(PrismaService), '$queryRaw').mockRejectedValue(
+      new Error('private database detail'),
+    );
+
+    await request(app.getHttpServer())
+      .get('/ready')
+      .expect(503)
+      .expect({
+        status: 'unavailable',
+        services: { postgres: 'down', redis: 'up' },
       });
   });
 
