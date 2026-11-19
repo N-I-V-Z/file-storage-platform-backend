@@ -222,6 +222,101 @@ describe('AppController (e2e)', () => {
       .expect(401);
   });
 
+  it('rotates refresh tokens and revokes a session on replay', async () => {
+    const email = `refresh-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      const login = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'long-test-password' })
+        .expect(200);
+      const originalCookie = String(login.headers['set-cookie']).split(';')[0];
+
+      const refreshed = await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', originalCookie)
+        .expect(200);
+      const rotatedCookie = String(refreshed.headers['set-cookie']).split(
+        ';',
+      )[0];
+      expect(rotatedCookie).not.toBe(originalCookie);
+      expect(refreshed.body.accessToken).toEqual(expect.any(String));
+
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', originalCookie)
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', rotatedCookie)
+        .expect(401);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
+  it('rejects refresh without a cookie', async () => {
+    await request(app.getHttpServer()).post('/api/v1/auth/refresh').expect(401);
+  });
+
+  it('does not revoke a session for an unrelated invalid token', async () => {
+    const email = `invalid-refresh-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      const login = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'long-test-password' })
+        .expect(200);
+      const cookie = String(login.headers['set-cookie']).split(';')[0];
+      const invalidCookie = `${cookie.slice(0, -1)}${cookie.endsWith('A') ? 'B' : 'A'}`;
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', invalidCookie)
+        .expect(401);
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookie)
+        .expect(200);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
+  it('rejects an expired refresh session', async () => {
+    const email = `expired-refresh-${randomUUID()}@example.com`;
+    try {
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/register')
+        .send({ email, password: 'long-test-password' })
+        .expect(201);
+      const login = await request(app.getHttpServer())
+        .post('/api/v1/auth/login')
+        .send({ email, password: 'long-test-password' })
+        .expect(200);
+      const cookie = String(login.headers['set-cookie']).split(';')[0];
+      const user = await app.get(PrismaService).user.findUniqueOrThrow({
+        where: { email },
+        include: { sessions: true },
+      });
+      await app.get(PrismaService).session.update({
+        where: { id: user.sessions[0].id },
+        data: { expiresAt: new Date(Date.now() - 1000) },
+      });
+      await request(app.getHttpServer())
+        .post('/api/v1/auth/refresh')
+        .set('Cookie', cookie)
+        .expect(401);
+    } finally {
+      await app.get(PrismaService).user.deleteMany({ where: { email } });
+    }
+  });
+
   afterEach(async () => {
     await app.close();
   });

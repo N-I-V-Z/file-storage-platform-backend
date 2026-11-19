@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { NextFunction, Request, Response } from 'express';
 import { ValidatedEnvironment } from './env.validation.js';
 import { ApiExceptionFilter } from './api-exception.filter.js';
@@ -17,6 +18,7 @@ export function configureHttp(
   config: ConfigService<ValidatedEnvironment, true>,
 ): void {
   app.use(helmet());
+  app.use(cookieParser());
   app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalPipes(
     new ValidationPipe({

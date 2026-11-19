@@ -1,6 +1,6 @@
-import { Body, Controller, HttpCode, Post, Res } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
 import { UsersService } from '../users/users.service.js';
 import {
@@ -31,13 +31,30 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ) {
     const result = await this.auth.login(body.email, body.password);
-    response.cookie(REFRESH_COOKIE_NAME, result.refreshCookie, {
+    this.setRefreshCookie(response, result.refreshCookie);
+    return { accessToken: result.accessToken, user: result.user };
+  }
+
+  @Post('refresh')
+  @HttpCode(200)
+  async refresh(
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.auth.refresh(
+      request.cookies?.[REFRESH_COOKIE_NAME],
+    );
+    this.setRefreshCookie(response, result.refreshCookie);
+    return { accessToken: result.accessToken, user: result.user };
+  }
+
+  private setRefreshCookie(response: Response, value: string): void {
+    response.cookie(REFRESH_COOKIE_NAME, value, {
       httpOnly: true,
       secure: this.config.getOrThrow('nodeEnv') === 'production',
       sameSite: 'lax',
       path: '/api/v1/auth',
       maxAge: REFRESH_LIFETIME_MS,
     });
-    return { accessToken: result.accessToken, user: result.user };
   }
 }
