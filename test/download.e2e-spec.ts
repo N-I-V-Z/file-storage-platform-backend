@@ -1,7 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { request as httpRequest } from 'node:http';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { vi } from 'vitest';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -315,5 +317,45 @@ describe('private streaming download (e2e)', () => {
       .get(path())
       .set('Authorization', auth)
       .expect(200);
+  });
+
+  it('releases a download slot when the client disconnects', async () => {
+    const large = await seedReady(Buffer.alloc(8 * 1024 * 1024, 7));
+    const config = app.get(ConfigService);
+    const originalLimit = config.getOrThrow<number>('maxConcurrentDownloads');
+    config.set('maxConcurrentDownloads', 1);
+    try {
+      await app.listen(0, '127.0.0.1');
+      const url = new URL(path().replace(fileId, large.id), await app.getUrl());
+      await new Promise<void>((resolve, reject) => {
+        const outgoing = httpRequest(
+          url,
+          { headers: { Authorization: auth } },
+          (incoming) => {
+            expect(incoming.statusCode).toBe(200);
+            incoming.once('data', () => incoming.destroy());
+            incoming.once('close', resolve);
+            incoming.once('error', reject);
+          },
+        );
+        outgoing.once('error', reject);
+        outgoing.end();
+      });
+      let recovered = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const result = await request(app.getHttpServer())
+          .head(path())
+          .set('Authorization', auth);
+        if (result.status === 200) {
+          recovered = true;
+          break;
+        }
+        expect(result.status).toBe(429);
+        await delay(20);
+      }
+      expect(recovered).toBe(true);
+    } finally {
+      config.set('maxConcurrentDownloads', originalLimit);
+    }
   });
 });
