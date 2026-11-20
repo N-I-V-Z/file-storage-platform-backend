@@ -15,6 +15,9 @@ import { FilesService } from './files.service.js';
 import { UploadReconciler } from './upload-reconciler.js';
 import { FileListService } from './file-list.service.js';
 import { FoldersModule } from '../folders/folders.module.js';
+import { FileTrashController } from './file-trash.controller.js';
+import { FileTrashService } from './file-trash.service.js';
+import { FileTrashReconciler } from './file-trash-reconciler.js';
 
 @Module({
   imports: [
@@ -27,7 +30,7 @@ import { FoldersModule } from '../folders/folders.module.js';
     DatabaseModule,
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
   ],
-  controllers: [FilesController],
+  controllers: [FilesController, FileTrashController],
   providers: [
     FilesService,
     FileListService,
@@ -35,6 +38,8 @@ import { FoldersModule } from '../folders/folders.module.js';
     FileDownloadGuard,
     FileDownloadService,
     FilesRepository,
+    FileTrashService,
+    FileTrashReconciler,
     UploadReconciler,
   ],
 })

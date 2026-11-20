@@ -67,6 +67,8 @@ enum StoredFileStatus {
   UPLOADING
   ABANDONED
   READY
+  TRASHED
+  PURGING
 }
 
 model StoredFile {
@@ -83,12 +85,15 @@ model StoredFile {
   expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  trashedAt        DateTime?        @map("trashed_at") @db.Timestamptz(6)
+  purgeAfter       DateTime?        @map("purge_after") @db.Timestamptz(6)
   project          Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
   folder           Folder?          @relation(fields: [projectId, folderId], references: [projectId, id], onDelete: Restrict)
 
   @@index([projectId, status])
   @@index([projectId, folderId, status])
   @@index([status, expiresAt])
+  @@index([status, purgeAfter])
   @@map("stored_files")
 }
 
