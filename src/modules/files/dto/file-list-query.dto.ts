@@ -55,9 +55,7 @@ export class FileListQueryDto {
   contentType?: (typeof FILE_CONTENT_TYPES)[number];
 
   @IsOptional()
-  @Matches(
-    /^(?:root|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
-  )
+  @Matches(/^(?:root|[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12})$/)
   folderId?: string;
 
   @IsOptional()

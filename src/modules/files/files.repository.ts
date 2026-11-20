@@ -12,7 +12,15 @@ export class FilesRepository {
       projectId,
       status: 'READY',
       ...(query.search
-        ? { originalName: { contains: query.search, mode: 'insensitive' } }
+        ? {
+            originalName: {
+              contains: query.search.replace(
+                /[\\%_]/g,
+                (value) => `\\${value}`,
+              ),
+              mode: 'insensitive',
+            },
+          }
         : {}),
       ...(query.contentType ? { contentType: query.contentType } : {}),
       ...(query.folderId

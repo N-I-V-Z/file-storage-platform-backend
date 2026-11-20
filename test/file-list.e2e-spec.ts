@@ -70,14 +70,35 @@ describe('project file listing (e2e)', () => {
       });
     await create('Alpha.pdf', 'application/pdf', 10, 16);
     await create('beta.png', 'image/png', 20, 17);
-    await create('Gamma.pdf', 'application/pdf', 30, 18);
+    await create('Gamma.pdf', 'application/pdf', 20, 18);
     await create('hidden.pdf', 'application/pdf', 40, 19, 'UPLOADING');
+    const foreignProject = await request(app.getHttpServer())
+      .post('/api/v1/projects')
+      .set('Authorization', foreignAuth)
+      .send({ name: 'Foreign files' })
+      .expect(201);
+    await prisma.storedFile.create({
+      data: {
+        ...base,
+        projectId: foreignProject.body.data.id as string,
+        storageKey: randomUUID(),
+        originalName: 'foreign.pdf',
+        contentType: 'application/pdf',
+        status: 'READY',
+        sizeBytes: BigInt(50),
+        sha256: 'a'.repeat(64),
+      },
+    });
   });
 
   afterAll(async () => {
     if (app) {
       const prisma = app.get(PrismaService);
-      await prisma.storedFile.deleteMany({ where: { projectId } });
+      await prisma.storedFile.deleteMany({
+        where: {
+          project: { owner: { email: { in: [ownerEmail, foreignEmail] } } },
+        },
+      });
       await prisma.user.deleteMany({
         where: { email: { in: [ownerEmail, foreignEmail] } },
       });
@@ -103,7 +124,7 @@ describe('project file listing (e2e)', () => {
     expect(response.body.data.items).toHaveLength(3);
     expect(response.body.data.items[0]).toMatchObject({
       originalName: 'Gamma.pdf',
-      sizeBytes: '30',
+      sizeBytes: '20',
       status: 'ready',
     });
     expect(JSON.stringify(response.body.data)).not.toContain('storageKey');
@@ -111,6 +132,13 @@ describe('project file listing (e2e)', () => {
   });
 
   it('paginates, searches, filters and sorts with deterministic results', async () => {
+    const tied = await app.get(PrismaService).storedFile.findMany({
+      where: { projectId, originalName: { in: ['beta.png', 'Gamma.pdf'] } },
+      select: { id: true, originalName: true },
+    });
+    const tiedNames = tied
+      .sort((a, b) => (a.id < b.id ? -1 : 1))
+      .map((file) => file.originalName);
     const first = await request(app.getHttpServer())
       .get(path())
       .query({ page: 1, pageSize: 2, sort: 'size-asc' })
@@ -120,7 +148,7 @@ describe('project file listing (e2e)', () => {
       first.body.data.items.map(
         (item: { originalName: string }) => item.originalName,
       ),
-    ).toEqual(['Alpha.pdf', 'beta.png']);
+    ).toEqual(['Alpha.pdf', tiedNames[0]]);
     expect(first.body.data.total).toBe(3);
     const second = await request(app.getHttpServer())
       .get(path())
@@ -131,7 +159,7 @@ describe('project file listing (e2e)', () => {
       second.body.data.items.map(
         (item: { originalName: string }) => item.originalName,
       ),
-    ).toEqual(['Gamma.pdf']);
+    ).toEqual([tiedNames[1]]);
     const filtered = await request(app.getHttpServer())
       .get(path())
       .query({ search: 'GAM', contentType: 'application/pdf' })
@@ -149,12 +177,65 @@ describe('project file listing (e2e)', () => {
       { contentType: 'text/html' },
       { search: 'x'.repeat(121) },
       { unknown: 'value' },
+      { folderId: 'ROOT' },
     ]) {
       await request(app.getHttpServer())
         .get(path())
         .query(query)
         .set('Authorization', ownerAuth)
         .expect(400);
+    }
+  });
+
+  it('treats filename search wildcards as literal characters', async () => {
+    const prisma = app.get(PrismaService);
+    const names = [
+      'report_1.pdf',
+      'reportx1.pdf',
+      'budget%2026.pdf',
+      'budgetX2026.pdf',
+    ];
+    try {
+      for (const name of names) {
+        await prisma.storedFile.create({
+          data: {
+            projectId,
+            storageKey: randomUUID(),
+            originalName: name,
+            contentType: 'application/pdf',
+            status: 'READY',
+            reservationBytes: BigInt(100),
+            sizeBytes: BigInt(10),
+            sha256: 'a'.repeat(64),
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+        });
+      }
+      for (const [search, expected] of [
+        ['_', 'report_1.pdf'],
+        ['%', 'budget%2026.pdf'],
+      ]) {
+        const response = await request(app.getHttpServer())
+          .get(path())
+          .query({ search })
+          .set('Authorization', ownerAuth)
+          .expect(200);
+        expect(
+          response.body.data.items.map(
+            (item: { originalName: string }) => item.originalName,
+          ),
+        ).toEqual([expected]);
+      }
+      const slash = await request(app.getHttpServer())
+        .get(path())
+        .query({ search: '\\' })
+        .set('Authorization', ownerAuth)
+        .expect(200);
+      expect(slash.body.data.total).toBe(0);
+    } finally {
+      await prisma.storedFile.deleteMany({
+        where: { projectId, originalName: { in: names } },
+      });
     }
   });
 

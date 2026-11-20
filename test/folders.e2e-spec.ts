@@ -48,7 +48,11 @@ describe('project folders (e2e)', () => {
   afterAll(async () => {
     if (app) {
       const prisma = app.get(PrismaService);
-      await prisma.storedFile.deleteMany({ where: { projectId } });
+      await prisma.storedFile.deleteMany({
+        where: {
+          project: { owner: { email: { in: [ownerEmail, foreignEmail] } } },
+        },
+      });
       await prisma.user.deleteMany({
         where: { email: { in: [ownerEmail, foreignEmail] } },
       });
