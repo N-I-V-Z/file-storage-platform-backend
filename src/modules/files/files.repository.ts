@@ -2,15 +2,28 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { FileListQueryDto } from './dto/file-list-query.dto.js';
+import type { StoredFileStatus } from '../../generated/prisma/enums.js';
 
 @Injectable()
 export class FilesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listReady(projectId: string, query: FileListQueryDto) {
+  listReady(projectId: string, query: FileListQueryDto) {
+    return this.listByStatus(projectId, query, 'READY');
+  }
+
+  listTrashed(projectId: string, query: FileListQueryDto) {
+    return this.listByStatus(projectId, query, 'TRASHED');
+  }
+
+  private async listByStatus(
+    projectId: string,
+    query: FileListQueryDto,
+    status: StoredFileStatus,
+  ) {
     const where: Prisma.StoredFileWhereInput = {
       projectId,
-      status: 'READY',
+      status,
       ...(query.search
         ? {
             originalName: {
@@ -51,6 +64,8 @@ export class FilesRepository {
           sizeBytes: true,
           sha256: true,
           createdAt: true,
+          trashedAt: true,
+          purgeAfter: true,
         },
         orderBy,
         skip: (query.page - 1) * query.pageSize,
@@ -59,6 +74,34 @@ export class FilesRepository {
       this.prisma.storedFile.count({ where }),
     ]);
     return { items, total };
+  }
+
+  async trash(projectId: string, fileId: string, now: Date, purgeAfter: Date) {
+    const changed = await this.prisma.storedFile.updateMany({
+      where: { id: fileId, projectId, status: 'READY' },
+      data: { status: 'TRASHED', trashedAt: now, purgeAfter },
+    });
+    return changed.count > 0;
+  }
+
+  findTrashed(projectId: string, fileId: string) {
+    return this.prisma.storedFile.findFirst({
+      where: { id: fileId, projectId, status: 'TRASHED' },
+      select: { id: true, purgeAfter: true },
+    });
+  }
+
+  async restore(projectId: string, fileId: string, now: Date) {
+    const changed = await this.prisma.storedFile.updateMany({
+      where: {
+        id: fileId,
+        projectId,
+        status: 'TRASHED',
+        purgeAfter: { gt: now },
+      },
+      data: { status: 'READY', trashedAt: null, purgeAfter: null },
+    });
+    return changed.count > 0;
   }
 
   findReady(projectId: string, fileId: string) {
