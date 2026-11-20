@@ -2,6 +2,8 @@
 
 `POST /api/v1/projects/:projectId/files` accepts exactly one `multipart/form-data` part named `file`. Authenticate with `Authorization: Bearer <accessToken>` as the project owner or `Authorization: ApiKey <token>` scoped to `files:write` for that project. Never put a key in a URL or form field. An optional `X-Content-SHA256` header must be 64 lowercase hexadecimal characters and match the received file. Requests are limited to 20 attempts/minute/IP in the current single-process deployment.
 
+An optional `X-Folder-Id: <uuid>` header associates the file with a folder in the same project. Omit it for the project root. Invalid IDs return `400`; missing or foreign folders return `404`. This is metadata only: the server still generates the private storage key. Successful responses include nullable `folderId`.
+
 Accepted MIME/signature pairs are PNG, JPEG, WebP, PDF, MP4, and ZIP. The supplied filename must be 1–255 UTF-8 bytes and cannot contain path separators or control characters. The server generates both the public file ID and private storage key; it never uses the supplied filename as a path. Empty files, unsupported or mismatched signatures, extra multipart parts, and checksum mismatches return `400`. The actual byte limit is 512 MiB by default; exceeding it returns `413`. A full project quota also returns `413`; insufficient disk space or an `ENOSPC` write returns `507`. The concurrency limit returns `429`. An interrupted or timed-out upload is canceled and its reservation is released.
 
 On success, HTTP `201` returns the usual JSON envelope. Example `data`:
