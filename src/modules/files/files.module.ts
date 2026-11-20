@@ -13,6 +13,7 @@ import { FilesRepository } from './files.repository.js';
 import { FilesController } from './files.controller.js';
 import { FilesService } from './files.service.js';
 import { UploadReconciler } from './upload-reconciler.js';
+import { FileListService } from './file-list.service.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { UploadReconciler } from './upload-reconciler.js';
   controllers: [FilesController],
   providers: [
     FilesService,
+    FileListService,
     FileUploadGuard,
     FileDownloadGuard,
     FileDownloadService,
