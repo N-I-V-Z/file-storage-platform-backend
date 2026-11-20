@@ -36,6 +36,14 @@ export class ProjectsController {
     return this.projects.get(user.userId, id);
   }
 
+  @Get(':id/usage')
+  usage(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.projects.getUsage(user.userId, id);
+  }
+
   @Patch(':id')
   rename(
     @CurrentUser() user: AuthPrincipal,

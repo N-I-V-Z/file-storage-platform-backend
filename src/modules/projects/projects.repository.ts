@@ -43,6 +43,18 @@ export class ProjectsRepository {
     });
   }
 
+  findOwnedUsage(ownerId: string, id: string) {
+    return this.prisma.project.findFirst({
+      where: { id, ownerId },
+      select: {
+        id: true,
+        quotaBytes: true,
+        usedBytes: true,
+        reservedBytes: true,
+      },
+    });
+  }
+
   async renameOwned(ownerId: string, id: string, name: string) {
     const result = await this.prisma.project.updateMany({
       where: { id, ownerId },
