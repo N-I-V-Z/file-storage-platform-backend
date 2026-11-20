@@ -15,6 +15,9 @@ export class FilesRepository {
         ? { originalName: { contains: query.search, mode: 'insensitive' } }
         : {}),
       ...(query.contentType ? { contentType: query.contentType } : {}),
+      ...(query.folderId
+        ? { folderId: query.folderId === 'root' ? null : query.folderId }
+        : {}),
     };
     const orderBy: Prisma.StoredFileOrderByWithRelationInput[] =
       query.sort === 'oldest'
@@ -34,6 +37,7 @@ export class FilesRepository {
         select: {
           id: true,
           projectId: true,
+          folderId: true,
           originalName: true,
           contentType: true,
           sizeBytes: true,

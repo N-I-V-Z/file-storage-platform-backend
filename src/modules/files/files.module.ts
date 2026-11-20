@@ -14,12 +14,14 @@ import { FilesController } from './files.controller.js';
 import { FilesService } from './files.service.js';
 import { UploadReconciler } from './upload-reconciler.js';
 import { FileListService } from './file-list.service.js';
+import { FoldersModule } from '../folders/folders.module.js';
 
 @Module({
   imports: [
     AuthModule,
     ApiKeysModule,
     ProjectsModule,
+    FoldersModule,
     QuotasModule,
     StorageModule,
     DatabaseModule,

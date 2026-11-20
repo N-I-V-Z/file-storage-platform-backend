@@ -6,6 +6,7 @@ import {
   IsString,
   Max,
   MaxLength,
+  Matches,
   Min,
 } from 'class-validator';
 
@@ -52,6 +53,12 @@ export class FileListQueryDto {
   @IsOptional()
   @IsIn(FILE_CONTENT_TYPES)
   contentType?: (typeof FILE_CONTENT_TYPES)[number];
+
+  @IsOptional()
+  @Matches(
+    /^(?:root|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i,
+  )
+  folderId?: string;
 
   @IsOptional()
   @IsIn(FILE_SORTS)

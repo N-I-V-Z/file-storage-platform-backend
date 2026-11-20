@@ -157,4 +157,38 @@ describe('project file listing (e2e)', () => {
         .expect(400);
     }
   });
+
+  it('filters files to a folder or the project root', async () => {
+    const folder = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/folders`)
+      .set('Authorization', ownerAuth)
+      .send({ name: 'Reports' })
+      .expect(201);
+    const folderId = folder.body.data.id as string;
+    await app.get(PrismaService).storedFile.updateMany({
+      where: { projectId, originalName: 'Gamma.pdf' },
+      data: { folderId },
+    });
+    const inside = await request(app.getHttpServer())
+      .get(path())
+      .query({ folderId })
+      .set('Authorization', ownerAuth)
+      .expect(200);
+    expect(
+      inside.body.data.items.map(
+        (file: { originalName: string }) => file.originalName,
+      ),
+    ).toEqual(['Gamma.pdf']);
+    const root = await request(app.getHttpServer())
+      .get(path())
+      .query({ folderId: 'root' })
+      .set('Authorization', ownerAuth)
+      .expect(200);
+    expect(root.body.data.total).toBe(2);
+    await request(app.getHttpServer())
+      .get(path())
+      .query({ folderId: 'invalid' })
+      .set('Authorization', ownerAuth)
+      .expect(400);
+  });
 });

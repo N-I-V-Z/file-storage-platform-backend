@@ -37,6 +37,12 @@ export class FoldersService {
     return this.folders.list(projectId);
   }
 
+  async requireProjectFolder(projectId: string, id: string): Promise<void> {
+    if (!(await this.folders.find(projectId, id))) {
+      throw new NotFoundException('Folder not found');
+    }
+  }
+
   async rename(ownerId: string, projectId: string, id: string, name: string) {
     await this.projects.get(ownerId, projectId);
     try {

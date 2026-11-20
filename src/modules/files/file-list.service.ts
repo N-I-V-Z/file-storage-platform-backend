@@ -17,6 +17,7 @@ export class FileListService {
       items: items.map((file) => ({
         id: file.id,
         projectId: file.projectId,
+        folderId: file.folderId,
         originalName: file.originalName,
         contentType: file.contentType,
         sizeBytes: file.sizeBytes!.toString(),

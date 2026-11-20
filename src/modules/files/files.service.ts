@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Inject,
   Injectable,
+  NotFoundException,
   PayloadTooLargeException,
   RequestTimeoutException,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import {
   type StorageAdapter,
 } from '../../infrastructure/storage/storage-adapter.js';
 import { QuotasRepository } from '../quotas/quotas.repository.js';
+import { FoldersService } from '../folders/folders.service.js';
 import { FileInspector } from './file-inspector.js';
 import { matchesSignature, supportsMimeType } from './file-signatures.js';
 
@@ -35,6 +37,7 @@ export class FilesService {
     private readonly config: ConfigService<ValidatedEnvironment, true>,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     private readonly quotas: QuotasRepository,
+    private readonly folders: FoldersService,
   ) {}
 
   async upload(request: Request, projectId: string) {
@@ -48,6 +51,7 @@ export class FilesService {
     }
     this.activeUploads++;
     let expectedSha256: string | undefined;
+    let folderId: string | null = null;
     try {
       if (
         !request.headers['content-type']?.startsWith('multipart/form-data;')
@@ -63,6 +67,19 @@ export class FilesService {
         throw new BadRequestException('Invalid X-Content-SHA256');
       }
       expectedSha256 = checksumHeader;
+      const folderHeader = request.headers['x-folder-id'];
+      if (folderHeader !== undefined) {
+        if (
+          typeof folderHeader !== 'string' ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+            folderHeader,
+          )
+        ) {
+          throw new BadRequestException('Invalid X-Folder-Id');
+        }
+        await this.folders.requireProjectFolder(projectId, folderHeader);
+        folderId = folderHeader;
+      }
       const contentLength = Number(request.headers['content-length']);
       if (
         Number.isFinite(contentLength) &&
@@ -129,6 +146,7 @@ export class FilesService {
           stream,
           info,
           projectId,
+          folderId,
           maxBytes,
           abort.signal,
           (value) => {
@@ -174,6 +192,7 @@ export class FilesService {
       return {
         id: ready.id,
         projectId: ready.projectId,
+        folderId: ready.folderId,
         originalName: ready.originalName,
         contentType: ready.contentType,
         sizeBytes: file.sizeBytes,
@@ -208,6 +227,7 @@ export class FilesService {
     stream: Readable & { truncated?: boolean },
     info: { filename?: string; mimeType: string },
     projectId: string,
+    folderId: string | null,
     maxBytes: number,
     signal: AbortSignal,
     setPending: (value: PendingUpload) => void,
@@ -234,14 +254,28 @@ export class FilesService {
     }
     const id = randomUUID();
     const storageKey = randomUUID();
-    const reserved = await this.quotas.reserve({
-      id,
-      projectId,
-      storageKey,
-      originalName,
-      contentType,
-      reservationBytes: BigInt(maxBytes),
-    });
+    let reserved: Awaited<ReturnType<QuotasRepository['reserve']>>;
+    try {
+      reserved = await this.quotas.reserve({
+        id,
+        projectId,
+        folderId,
+        storageKey,
+        originalName,
+        contentType,
+        reservationBytes: BigInt(maxBytes),
+      });
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        ['P2003', '23503'].includes(String(error.code))
+      ) {
+        throw new NotFoundException('Folder not found');
+      }
+      throw error;
+    }
     if (!reserved) {
       stream.resume();
       throw new PayloadTooLargeException('Project quota exceeded');

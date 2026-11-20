@@ -96,6 +96,77 @@ describe('streaming upload (e2e)', () => {
     expect(stored.status).toBe('READY');
   });
 
+  it('uploads into a project folder and rejects missing or foreign folders', async () => {
+    const accountEmail = `upload-folder-${randomUUID()}@example.com`;
+    emails.push(accountEmail);
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ email: accountEmail, password: 'long-test-password' })
+      .expect(201);
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email: accountEmail, password: 'long-test-password' })
+      .expect(200);
+    const auth = `Bearer ${login.body.data.accessToken as string}`;
+    const project = await request(app.getHttpServer())
+      .post('/api/v1/projects')
+      .set('Authorization', auth)
+      .send({ name: 'Folder upload' })
+      .expect(201);
+    const projectId = project.body.data.id as string;
+    const folder = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/folders`)
+      .set('Authorization', auth)
+      .send({ name: 'Media' })
+      .expect(201);
+    const folderId = folder.body.data.id as string;
+    const bytes = Buffer.from('%PDF-1.7\nfolder upload\n');
+    const path = `/api/v1/projects/${projectId}/files`;
+    const upload = (header: string) =>
+      request(app.getHttpServer())
+        .post(path)
+        .set('Authorization', auth)
+        .set('X-Folder-Id', header)
+        .attach('file', bytes, {
+          filename: 'folder.pdf',
+          contentType: 'application/pdf',
+        });
+    const uploaded = await upload(folderId).expect(201);
+    expect(uploaded.body.data.folderId).toBe(folderId);
+    const stored = await app.get(PrismaService).storedFile.findUniqueOrThrow({
+      where: { id: uploaded.body.data.id as string },
+    });
+    expect(stored.folderId).toBe(folderId);
+    await upload(randomUUID()).expect(404);
+    await upload('not-a-uuid').expect(400);
+    const other = await request(app.getHttpServer())
+      .post('/api/v1/projects')
+      .set('Authorization', auth)
+      .send({ name: 'Other folder project' })
+      .expect(201);
+    const foreignFolder = await request(app.getHttpServer())
+      .post(`/api/v1/projects/${other.body.data.id as string}/folders`)
+      .set('Authorization', auth)
+      .send({ name: 'Foreign' })
+      .expect(201);
+    await upload(foreignFolder.body.data.id as string).expect(404);
+    const root = await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', auth)
+      .attach('file', bytes, {
+        filename: 'root.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(201);
+    expect(root.body.data.folderId).toBeNull();
+    const usage = await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/usage`)
+      .set('Authorization', auth)
+      .expect(200);
+    expect(usage.body.data.reservedBytes).toBe('0');
+    expect(usage.body.data.usedBytes).toBe(String(bytes.length * 2));
+  });
+
   it('enforces key scope and cleans failed uploads', async () => {
     const accountEmail = `upload-key-${randomUUID()}@example.com`;
     emails.push(accountEmail);
@@ -304,6 +375,9 @@ describe('streaming upload (e2e)', () => {
     const project = await prisma.project.create({
       data: { ownerId: user.id, name: 'Abort' },
     });
+    const folder = await prisma.folder.create({
+      data: { projectId: project.id, name: 'Partial' },
+    });
     const config = app.get(ConfigService);
     const original = config.getOrThrow.bind(config);
     const limits = vi
@@ -315,6 +389,7 @@ describe('streaming upload (e2e)', () => {
       const stream = new PassThrough() as PassThrough & Request;
       stream.headers = {
         'content-type': 'multipart/form-data; boundary=boundary',
+        'x-folder-id': folder.id,
       };
       stream.write(
         '--boundary\r\nContent-Disposition: form-data; name="file"; filename="partial.pdf"\r\nContent-Type: application/pdf\r\n\r\n%PDF-1.7\n',
@@ -329,7 +404,9 @@ describe('streaming upload (e2e)', () => {
     try {
       await vi.waitFor(async () => {
         expect(
-          await prisma.storedFile.count({ where: { projectId: project.id } }),
+          await prisma.storedFile.count({
+            where: { projectId: project.id, folderId: folder.id },
+          }),
         ).toBe(1);
       });
       await expect(service.upload(partial(), project.id)).rejects.toMatchObject(
