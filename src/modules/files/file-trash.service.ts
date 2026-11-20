@@ -1,8 +1,14 @@
 import {
   ConflictException,
   Injectable,
+  Inject,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
+import {
+  STORAGE_ADAPTER,
+  type StorageAdapter,
+} from '../../infrastructure/storage/storage-adapter.js';
 import { ProjectsService } from '../projects/projects.service.js';
 import { FileListQueryDto } from './dto/file-list-query.dto.js';
 import { FilesRepository } from './files.repository.js';
@@ -14,6 +20,7 @@ export class FileTrashService {
   constructor(
     private readonly projects: ProjectsService,
     private readonly files: FilesRepository,
+    @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
   ) {}
 
   async list(ownerId: string, projectId: string, query: FileListQueryDto) {
@@ -61,5 +68,24 @@ export class FileTrashService {
     const changed = await this.files.restore(projectId, fileId, now);
     if (!changed) throw new ConflictException('File can no longer be restored');
     return { id: fileId, status: 'ready' as const };
+  }
+
+  async purge(ownerId: string, projectId: string, fileId: string) {
+    await this.projects.get(ownerId, projectId);
+    if (!(await this.files.claimPurge(projectId, fileId))) {
+      throw new NotFoundException('File not found in trash');
+    }
+    try {
+      await this.processPurge(fileId);
+    } catch {
+      throw new ServiceUnavailableException('File purge is pending retry');
+    }
+  }
+
+  async processPurge(fileId: string) {
+    const file = await this.files.findPurging(fileId);
+    if (!file) return;
+    await this.storage.remove(file.storageKey);
+    await this.files.finalizePurge(fileId);
   }
 }

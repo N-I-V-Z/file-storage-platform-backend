@@ -104,6 +104,71 @@ export class FilesRepository {
     return changed.count > 0;
   }
 
+  async claimPurge(projectId: string, fileId: string) {
+    const changed = await this.prisma.storedFile.updateMany({
+      where: { id: fileId, projectId, status: 'TRASHED' },
+      data: { status: 'PURGING' },
+    });
+    return changed.count > 0;
+  }
+
+  async claimExpired(fileId: string, now: Date) {
+    const changed = await this.prisma.storedFile.updateMany({
+      where: { id: fileId, status: 'TRASHED', purgeAfter: { lte: now } },
+      data: { status: 'PURGING' },
+    });
+    return changed.count > 0;
+  }
+
+  findPurging(fileId: string) {
+    return this.prisma.storedFile.findFirst({
+      where: { id: fileId, status: 'PURGING' },
+      select: { id: true, storageKey: true },
+    });
+  }
+
+  listPurgeCandidates(now: Date) {
+    return this.prisma.storedFile.findMany({
+      where: {
+        OR: [
+          { status: 'PURGING' },
+          { status: 'TRASHED', purgeAfter: { lte: now } },
+        ],
+      },
+      select: { id: true, status: true },
+      orderBy: [{ updatedAt: 'asc' }, { id: 'asc' }],
+      take: 100,
+    });
+  }
+
+  async touchPurgeAttempt(fileId: string) {
+    await this.prisma.storedFile.updateMany({
+      where: { id: fileId, status: 'PURGING' },
+      data: { updatedAt: new Date() },
+    });
+  }
+
+  finalizePurge(fileId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const file = await tx.storedFile.findFirst({
+        where: { id: fileId, status: 'PURGING' },
+        select: { id: true, projectId: true, sizeBytes: true },
+      });
+      if (!file) return false;
+      if (file.sizeBytes === null)
+        throw new Error('Purging file has no byte size');
+      const removed = await tx.storedFile.deleteMany({
+        where: { id: fileId, status: 'PURGING' },
+      });
+      if (!removed.count) return false;
+      await tx.project.update({
+        where: { id: file.projectId },
+        data: { usedBytes: { decrement: file.sizeBytes } },
+      });
+      return true;
+    });
+  }
+
   findReady(projectId: string, fileId: string) {
     return this.prisma.storedFile.findFirst({
       where: { id: fileId, projectId, status: 'READY' },

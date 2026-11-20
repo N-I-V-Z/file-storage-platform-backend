@@ -16,6 +16,7 @@ import {
   STORAGE_ADAPTER,
   type StorageAdapter,
 } from '../src/infrastructure/storage/storage-adapter.js';
+import { FileTrashReconciler } from '../src/modules/files/file-trash-reconciler.js';
 
 describe('private file trash (e2e)', () => {
   let app: INestApplication;
@@ -169,5 +170,172 @@ describe('private file trash (e2e)', () => {
       .post(`/api/v1/projects/${projectId}/trash/${fileId}/restore`)
       .set('Authorization', ownerAuth)
       .expect(409);
+  });
+
+  it('permanently purges trashed bytes and metadata exactly once', async () => {
+    const prisma = app.get(PrismaService);
+    const stored = await prisma.storedFile.findUniqueOrThrow({
+      where: { id: fileId },
+    });
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/trash/${fileId}`)
+      .set('Authorization', ownerAuth)
+      .expect(204);
+    expect(
+      await prisma.storedFile.findUnique({ where: { id: fileId } }),
+    ).toBeNull();
+    await expect(
+      app.get<StorageAdapter>(STORAGE_ADAPTER).openObject(stored.storageKey),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+    const usage = await request(app.getHttpServer())
+      .get(`/api/v1/projects/${projectId}/usage`)
+      .set('Authorization', ownerAuth)
+      .expect(200);
+    expect(usage.body.data.usedBytes).toBe('0');
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/trash/${fileId}`)
+      .set('Authorization', ownerAuth)
+      .expect(404);
+  });
+
+  it('retries a failed purge and purges expired trash', async () => {
+    const prisma = app.get(PrismaService);
+    const storage = app.get<StorageAdapter>(STORAGE_ADAPTER);
+    const storageKey = randomUUID();
+    await pipeline(
+      Readable.from(['%PDF-1.7']),
+      storage.createTemporary(storageKey),
+    );
+    await storage.promote(storageKey);
+    const file = await prisma.storedFile.create({
+      data: {
+        projectId,
+        storageKey,
+        originalName: 'retry.pdf',
+        contentType: 'application/pdf',
+        status: 'READY',
+        reservationBytes: BigInt(8),
+        sizeBytes: BigInt(8),
+        sha256: 'a'.repeat(64),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { usedBytes: { increment: BigInt(8) } },
+    });
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/files/${file.id}`)
+      .set('Authorization', ownerAuth)
+      .expect(204);
+    const remove = vi
+      .spyOn(storage, 'remove')
+      .mockRejectedValueOnce(new Error('disk unavailable'));
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/trash/${file.id}`)
+      .set('Authorization', ownerAuth)
+      .expect(503);
+    expect(
+      (await prisma.storedFile.findUniqueOrThrow({ where: { id: file.id } }))
+        .status,
+    ).toBe('PURGING');
+    expect(
+      (await prisma.project.findUniqueOrThrow({ where: { id: projectId } }))
+        .usedBytes,
+    ).toBe(BigInt(8));
+    remove.mockRestore();
+    await app.get(FileTrashReconciler).run();
+    expect(
+      await prisma.storedFile.findUnique({ where: { id: file.id } }),
+    ).toBeNull();
+    expect(
+      (await prisma.project.findUniqueOrThrow({ where: { id: projectId } }))
+        .usedBytes,
+    ).toBe(BigInt(0));
+    const expiredKey = randomUUID();
+    await pipeline(
+      Readable.from(['%PDF-1.7']),
+      storage.createTemporary(expiredKey),
+    );
+    await storage.promote(expiredKey);
+    const expired = await prisma.storedFile.create({
+      data: {
+        projectId,
+        storageKey: expiredKey,
+        originalName: 'expired.pdf',
+        contentType: 'application/pdf',
+        status: 'READY',
+        reservationBytes: BigInt(8),
+        sizeBytes: BigInt(8),
+        sha256: 'a'.repeat(64),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { usedBytes: { increment: BigInt(8) } },
+    });
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/files/${expired.id}`)
+      .set('Authorization', ownerAuth)
+      .expect(204);
+    await prisma.storedFile.update({
+      where: { id: expired.id },
+      data: { purgeAfter: new Date(Date.now() - 1000) },
+    });
+    await app.get(FileTrashReconciler).run();
+    expect(
+      await prisma.storedFile.findUnique({ where: { id: expired.id } }),
+    ).toBeNull();
+    expect(
+      (await prisma.project.findUniqueOrThrow({ where: { id: projectId } }))
+        .usedBytes,
+    ).toBe(BigInt(0));
+  });
+
+  it('charges a concurrent permanent purge only once', async () => {
+    const prisma = app.get(PrismaService);
+    const storage = app.get<StorageAdapter>(STORAGE_ADAPTER);
+    const storageKey = randomUUID();
+    await pipeline(
+      Readable.from(['%PDF-1.7']),
+      storage.createTemporary(storageKey),
+    );
+    await storage.promote(storageKey);
+    const file = await prisma.storedFile.create({
+      data: {
+        projectId,
+        storageKey,
+        originalName: 'race.pdf',
+        contentType: 'application/pdf',
+        status: 'READY',
+        reservationBytes: BigInt(8),
+        sizeBytes: BigInt(8),
+        sha256: 'a'.repeat(64),
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+    });
+    await prisma.project.update({
+      where: { id: projectId },
+      data: { usedBytes: { increment: BigInt(8) } },
+    });
+    await request(app.getHttpServer())
+      .delete(`/api/v1/projects/${projectId}/files/${file.id}`)
+      .set('Authorization', ownerAuth)
+      .expect(204);
+    const results = await Promise.all(
+      [1, 2].map(() =>
+        request(app.getHttpServer())
+          .delete(`/api/v1/projects/${projectId}/trash/${file.id}`)
+          .set('Authorization', ownerAuth),
+      ),
+    );
+    expect(
+      results.map((result) => result.status).sort((a, b) => a - b),
+    ).toEqual([204, 404]);
+    expect(
+      (await prisma.project.findUniqueOrThrow({ where: { id: projectId } }))
+        .usedBytes,
+    ).toBe(BigInt(0));
   });
 });

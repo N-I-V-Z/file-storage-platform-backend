@@ -17,6 +17,7 @@ import { FileListService } from './file-list.service.js';
 import { FoldersModule } from '../folders/folders.module.js';
 import { FileTrashController } from './file-trash.controller.js';
 import { FileTrashService } from './file-trash.service.js';
+import { FileTrashReconciler } from './file-trash-reconciler.js';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { FileTrashService } from './file-trash.service.js';
     FileDownloadService,
     FilesRepository,
     FileTrashService,
+    FileTrashReconciler,
     UploadReconciler,
   ],
 })

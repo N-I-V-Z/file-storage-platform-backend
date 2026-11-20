@@ -49,4 +49,14 @@ export class FileTrashController {
   ) {
     return this.trash.restore(user.userId, projectId, fileId);
   }
+
+  @Delete('trash/:fileId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  purge(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+    @Param('fileId', new ParseUUIDPipe()) fileId: string,
+  ) {
+    return this.trash.purge(user.userId, projectId, fileId);
+  }
 }
