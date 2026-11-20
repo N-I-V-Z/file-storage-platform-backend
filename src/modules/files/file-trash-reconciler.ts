@@ -4,6 +4,8 @@ import {
   OnApplicationBootstrap,
   OnModuleDestroy,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { ValidatedEnvironment } from '../../config/env.validation.js';
 import { FilesRepository } from './files.repository.js';
 import { FileTrashService } from './file-trash.service.js';
 
@@ -18,9 +20,11 @@ export class FileTrashReconciler
   constructor(
     private readonly files: FilesRepository,
     private readonly trash: FileTrashService,
+    private readonly config: ConfigService<ValidatedEnvironment, true>,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
+    if (this.config.getOrThrow('nodeEnv') === 'test') return;
     await this.run();
     this.timer = setInterval(() => {
       void this.run().catch(() =>

@@ -170,6 +170,10 @@ describe('private file trash (e2e)', () => {
       .post(`/api/v1/projects/${projectId}/trash/${fileId}/restore`)
       .set('Authorization', ownerAuth)
       .expect(409);
+    await app.get(PrismaService).storedFile.update({
+      where: { id: fileId },
+      data: { purgeAfter: new Date(Date.now() + 60_000) },
+    });
   });
 
   it('permanently purges trashed bytes and metadata exactly once', async () => {
