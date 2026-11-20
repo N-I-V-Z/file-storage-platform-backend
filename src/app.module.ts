@@ -10,6 +10,7 @@ import { ProjectsModule } from './modules/projects/projects.module.js';
 import { ApiKeysModule } from './modules/api-keys/api-keys.module.js';
 import { QuotasModule } from './modules/quotas/quotas.module.js';
 import { FilesModule } from './modules/files/files.module.js';
+import { FoldersModule } from './modules/folders/folders.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -25,6 +26,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ApiKeysModule,
     QuotasModule,
     FilesModule,
+    FoldersModule,
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com,
     // then run `npx @nestjs/observe link` to write your key pair into .env.

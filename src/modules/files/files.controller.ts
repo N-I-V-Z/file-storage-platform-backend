@@ -1,10 +1,12 @@
 import {
   Controller,
   Get,
+  Header,
   Head,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -16,13 +18,28 @@ import { FileDownloadGuard } from './file-download.guard.js';
 import { FileDownloadService } from './file-download.service.js';
 import { FileUploadGuard } from './file-upload.guard.js';
 import { FilesService } from './files.service.js';
+import { FileListQueryDto } from './dto/file-list-query.dto.js';
+import { FileListService } from './file-list.service.js';
+import { CurrentUser } from '../auth/current-user.decorator.js';
+import type { AuthPrincipal } from '../auth/auth.guard.js';
 
 @Controller('projects/:projectId/files')
 export class FilesController {
   constructor(
     private readonly files: FilesService,
     private readonly downloads: FileDownloadService,
+    private readonly fileList: FileListService,
   ) {}
+
+  @Get()
+  @Header('Cache-Control', 'private, no-store')
+  list(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('projectId', new ParseUUIDPipe()) projectId: string,
+    @Query() query: FileListQueryDto,
+  ) {
+    return this.fileList.list(user.userId, projectId, query);
+  }
 
   @Post()
   @Public()

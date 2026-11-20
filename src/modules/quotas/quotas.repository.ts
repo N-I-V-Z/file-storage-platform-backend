@@ -6,6 +6,7 @@ import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 export interface ReserveUpload {
   id: string;
   projectId: string;
+  folderId?: string | null;
   storageKey: string;
   originalName: string;
   contentType: string;
@@ -33,6 +34,7 @@ export class QuotasRepository {
         data: {
           id: input.id,
           projectId: input.projectId,
+          folderId: input.folderId ?? null,
           storageKey: input.storageKey,
           originalName: input.originalName,
           contentType: input.contentType,
