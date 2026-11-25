@@ -13,10 +13,14 @@ import { CurrentUser } from '../auth/current-user.decorator.js';
 import type { AuthPrincipal } from '../auth/auth.guard.js';
 import { ProjectNameDto } from './dto/project-name.dto.js';
 import { ProjectsService } from './projects.service.js';
+import { UsageService } from '../quotas/usage.service.js';
 
 @Controller('projects')
 export class ProjectsController {
-  constructor(private readonly projects: ProjectsService) {}
+  constructor(
+    private readonly projects: ProjectsService,
+    private readonly usageService: UsageService,
+  ) {}
 
   @Post()
   create(@CurrentUser() user: AuthPrincipal, @Body() body: ProjectNameDto) {
@@ -42,6 +46,14 @@ export class ProjectsController {
     @Param('id', new ParseUUIDPipe()) id: string,
   ) {
     return this.projects.getUsage(user.userId, id);
+  }
+
+  @Get(':id/usage/breakdown')
+  breakdown(
+    @CurrentUser() user: AuthPrincipal,
+    @Param('id', new ParseUUIDPipe()) id: string,
+  ) {
+    return this.usageService.breakdown(user.userId, id);
   }
 
   @Patch(':id')
