@@ -42,6 +42,7 @@ export async function scanWithClamd(
   timer.unref();
 
   socket.on('error', fail);
+  request.source.on('error', fail);
   socket.on('close', () => fail(new Error('Malware scanner disconnected')));
   socket.on('data', (chunk: Buffer) => {
     reply = Buffer.concat([reply, chunk]);
@@ -93,6 +94,7 @@ export async function scanWithClamd(
     clearTimeout(timer);
     request.signal?.removeEventListener('abort', onAbort);
     request.source.destroy();
+    request.source.off('error', fail);
     socket.destroy();
   }
 }

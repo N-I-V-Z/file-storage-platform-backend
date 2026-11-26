@@ -115,3 +115,33 @@ it('times out when the daemon does not respond', async () => {
     }),
   ).rejects.toThrow();
 });
+
+it('rejects an input larger than the configured scan limit', async () => {
+  const port = await daemon(() => undefined);
+  await expect(
+    scanWithClamd({
+      host: '127.0.0.1',
+      port,
+      source: Readable.from([Buffer.from('oversized')]),
+      timeoutMs: 2000,
+      maxBytes: 4,
+    }),
+  ).rejects.toThrow(/exceeds configured size/);
+});
+
+it('rejects a temporary-file read failure', async () => {
+  const port = await daemon(() => undefined);
+  const source = new Readable({
+    read() {
+      this.destroy(new Error('read failed'));
+    },
+  });
+  await expect(
+    scanWithClamd({
+      host: '127.0.0.1',
+      port,
+      source,
+      timeoutMs: 2000,
+    }),
+  ).rejects.toThrow(/read failed/);
+});
