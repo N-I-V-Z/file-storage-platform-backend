@@ -12,6 +12,7 @@ import { PrismaService } from '../src/infrastructure/database/prisma.service.js'
 import { FilesystemStorage } from '../src/infrastructure/storage/filesystem-storage.js';
 import { STORAGE_ADAPTER } from '../src/infrastructure/storage/storage-adapter.js';
 import { AuditReconciler } from '../src/modules/audit/audit-reconciler.js';
+import { MALWARE_SCANNER } from '../src/infrastructure/scanner/scanner-adapter.js';
 
 describe('project audit (e2e)', () => {
   let app: INestApplication;
@@ -28,6 +29,8 @@ describe('project audit (e2e)', () => {
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(STORAGE_ADAPTER)
       .useFactory({ factory: () => new FilesystemStorage(storageRoot) })
+      .overrideProvider(MALWARE_SCANNER)
+      .useValue({ scan: async () => 'clean' })
       .compile();
     app = module.createNestApplication();
     configureHttp(app, app.get(ConfigService));
