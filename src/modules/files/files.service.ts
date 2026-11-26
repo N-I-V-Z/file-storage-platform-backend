@@ -23,6 +23,7 @@ import { QuotasRepository } from '../quotas/quotas.repository.js';
 import { FoldersService } from '../folders/folders.service.js';
 import { FileInspector } from './file-inspector.js';
 import { matchesSignature, supportsMimeType } from './file-signatures.js';
+import type { UploadAuditRequest } from './file-upload.guard.js';
 
 interface PendingUpload {
   id: string;
@@ -187,6 +188,7 @@ export class FilesService {
         file.id,
         BigInt(file.sizeBytes),
         file.sha256,
+        (request as UploadAuditRequest).auditActor,
       );
       if (!ready) throw new Error('Upload reservation expired');
       return {
