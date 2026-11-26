@@ -1,0 +1,9 @@
+# Project audit events
+
+`GET /api/v1/projects/:projectId/audit-events?page=1&pageSize=20` requires an owner JWT. A missing or foreign project returns `404`; API keys cannot read this endpoint. The response uses the standard success envelope and contains `{ items, total, page, pageSize }`. `page` starts at 1, and `pageSize` is 1–100. Events are ordered by `occurredAt` descending, then `id` descending. Set `Cache-Control: private, no-store`.
+
+Each item contains `id`, `projectId`, `actorType` (`USER`, `API_KEY`, or `SYSTEM`), nullable `actorId`, `action`, `resourceId`, and `occurredAt`. Actions currently include project create/rename/delete, API key issue/revoke, file upload/trash/restore, purge request, and purge completion. An API key actor ID identifies the key record, not its token. Event payloads never contain tokens, token hashes, project/key/file names, request bodies, or filesystem paths.
+
+Events are inserted in the same database transaction as the corresponding metadata change. `FILE_PURGE_REQUESTED` records a successful transition to `PURGING`; `FILE_PURGED` records successful metadata and quota finalization, including retries from the background reconciler. Failed or repeated transitions do not add events. Direct project deletion and user cascade deletion stamp the existing history with a purge deadline 90 days later. The deletion API also records `PROJECT_DELETED` with that deadline. A bounded cleanup pass runs on startup and every 10 minutes, deleting up to 1,000 expired rows per pass. Deleted projects have no owner-readable history endpoint; a separate admin API may expose retained records later.
+
+Deploy the additive audit migrations before deploying code that writes events. Rollback to old code leaves the table and rows intact; do not drop them during a rollback. The second migration backfills orphan event rows with a full 90-day window from its deployment because their original deletion time is unknown.

@@ -5,10 +5,13 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import { JwtAuthGuard, type AuthenticatedRequest } from '../auth/auth.guard.js';
 import { ApiKeysService } from '../api-keys/api-keys.service.js';
 import { ProjectsService } from '../projects/projects.service.js';
+
+export interface UploadAuditRequest extends AuthenticatedRequest {
+  auditActor?: { actorType: 'USER' | 'API_KEY'; actorId: string };
+}
 
 @Injectable()
 export class FileUploadGuard implements CanActivate {
@@ -19,7 +22,7 @@ export class FileUploadGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request>();
+    const request = context.switchToHttp().getRequest<UploadAuditRequest>();
     const projectId = request.params.projectId;
     if (typeof projectId !== 'string') {
       throw new UnauthorizedException('Project required');
@@ -40,10 +43,16 @@ export class FileUploadGuard implements CanActivate {
       const principal = (request as AuthenticatedRequest).authPrincipal;
       if (!principal) throw new UnauthorizedException('Access token required');
       await this.projects.get(principal.userId, projectId);
+      request.auditActor = { actorType: 'USER', actorId: principal.userId };
       return true;
     }
     if (scheme === 'ApiKey') {
-      await this.keys.verify(token, projectId, 'files:write');
+      const verified = await this.keys.verifyWithKeyId(
+        token,
+        projectId,
+        'files:write',
+      );
+      request.auditActor = { actorType: 'API_KEY', actorId: verified.keyId };
       return true;
     }
     throw new UnauthorizedException('Access token required');

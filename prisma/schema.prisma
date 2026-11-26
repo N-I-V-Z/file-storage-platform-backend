@@ -127,3 +127,19 @@ model ApiKey {
   @@index([expiresAt])
   @@map("api_keys")
 }
+
+model AuditEvent {
+  id         String    @id @default(uuid()) @db.Uuid
+  projectId  String    @map("project_id") @db.Uuid
+  actorType  String    @map("actor_type") @db.VarChar(16)
+  actorId    String?   @map("actor_id") @db.Uuid
+  action     String    @db.VarChar(40)
+  resourceId String?   @map("resource_id") @db.Uuid
+  occurredAt DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  purgeAfter DateTime? @map("purge_after") @db.Timestamptz(6)
+
+  // No project FK: the history must outlive a deleted project for 90 days.
+  @@index([projectId, occurredAt(sort: Desc), id(sort: Desc)])
+  @@index([purgeAfter])
+  @@map("audit_events")
+}

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
+import { recordAudit, recordProjectDeleted } from '../audit/audit-writer.js';
 
 const projectFields = {
   id: true,
@@ -18,13 +19,23 @@ export class ProjectsRepository {
   ) {}
 
   create(ownerId: string, name: string) {
-    return this.prisma.project.create({
-      data: {
-        ownerId,
-        name,
-        quotaBytes: BigInt(this.config.getOrThrow('projectQuotaBytes')),
-      },
-      select: projectFields,
+    return this.prisma.$transaction(async (tx) => {
+      const project = await tx.project.create({
+        data: {
+          ownerId,
+          name,
+          quotaBytes: BigInt(this.config.getOrThrow('projectQuotaBytes')),
+        },
+        select: projectFields,
+      });
+      await recordAudit(tx, {
+        projectId: project.id,
+        actorType: 'USER',
+        actorId: ownerId,
+        action: 'PROJECT_CREATED',
+        resourceId: project.id,
+      });
+      return project;
     });
   }
 
@@ -56,18 +67,35 @@ export class ProjectsRepository {
   }
 
   async renameOwned(ownerId: string, id: string, name: string) {
-    const result = await this.prisma.project.updateMany({
-      where: { id, ownerId },
-      data: { name },
+    return this.prisma.$transaction(async (tx) => {
+      const result = await tx.project.updateMany({
+        where: { id, ownerId },
+        data: { name },
+      });
+      if (result.count === 0) return null;
+      await recordAudit(tx, {
+        projectId: id,
+        actorType: 'USER',
+        actorId: ownerId,
+        action: 'PROJECT_RENAMED',
+        resourceId: id,
+      });
+      return tx.project.findUniqueOrThrow({
+        where: { id },
+        select: projectFields,
+      });
     });
-    if (result.count === 0) return null;
-    return this.findOwned(ownerId, id);
   }
 
   async deleteOwned(ownerId: string, id: string) {
     try {
-      const result = await this.prisma.project.deleteMany({
-        where: { id, ownerId, files: { none: {} } },
+      const result = await this.prisma.$transaction(async (tx) => {
+        const deleted = await tx.project.deleteMany({
+          where: { id, ownerId, files: { none: {} } },
+        });
+        if (deleted.count)
+          await recordProjectDeleted(tx, id, ownerId, new Date());
+        return deleted;
       });
       if (result.count > 0) return 'deleted' as const;
     } catch (error) {
