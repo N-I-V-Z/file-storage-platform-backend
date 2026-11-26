@@ -8,6 +8,13 @@ export interface ValidatedEnvironment {
   databaseUrl: string;
   redisUrl: string;
   storageRoot: string;
+  maxUploadBytes: number;
+  projectQuotaBytes: number;
+  minDiskFreeBytes: number;
+  maxConcurrentUploads: number;
+  uploadTimeoutMs: number;
+  maxConcurrentDownloads: number;
+  downloadTimeoutMs: number;
   corsOrigins: string[];
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
@@ -47,6 +54,28 @@ function connectionUrl(
   return value;
 }
 
+function integerLimit(
+  source: EnvironmentSource,
+  name: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number {
+  const raw = source[name] ?? String(fallback);
+  const value = Number(raw);
+  if (
+    !/^\d+$/.test(raw) ||
+    !Number.isSafeInteger(value) ||
+    value < minimum ||
+    value > maximum
+  ) {
+    throw new Error(
+      `${name} must be an integer between ${minimum} and ${maximum}`,
+    );
+  }
+  return value;
+}
+
 export function validateEnvironment(
   source: EnvironmentSource,
 ): ValidatedEnvironment {
@@ -65,6 +94,56 @@ export function validateEnvironment(
   if (!/^\d+$/.test(portValue) || port < 1 || port > 65535) {
     throw new Error('PORT must be an integer between 1 and 65535');
   }
+
+  const maxUploadBytes = integerLimit(
+    source,
+    'MAX_UPLOAD_BYTES',
+    512 * 1024 * 1024,
+    1,
+    1024 * 1024 * 1024 * 1024,
+  );
+  const projectQuotaBytes = integerLimit(
+    source,
+    'PROJECT_QUOTA_BYTES',
+    10 * 1024 * 1024 * 1024,
+    maxUploadBytes,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const minDiskFreeBytes = integerLimit(
+    source,
+    'MIN_DISK_FREE_BYTES',
+    1024 * 1024 * 1024,
+    0,
+    Number.MAX_SAFE_INTEGER,
+  );
+  const maxConcurrentUploads = integerLimit(
+    source,
+    'MAX_CONCURRENT_UPLOADS',
+    4,
+    1,
+    64,
+  );
+  const uploadTimeoutMs = integerLimit(
+    source,
+    'UPLOAD_TIMEOUT_MS',
+    600_000,
+    1000,
+    3_600_000,
+  );
+  const maxConcurrentDownloads = integerLimit(
+    source,
+    'MAX_CONCURRENT_DOWNLOADS',
+    16,
+    1,
+    256,
+  );
+  const downloadTimeoutMs = integerLimit(
+    source,
+    'DOWNLOAD_TIMEOUT_MS',
+    600_000,
+    1000,
+    3_600_000,
+  );
 
   const corsOrigins = required(source, 'CORS_ORIGINS')
     .split(',')
@@ -95,6 +174,13 @@ export function validateEnvironment(
     ]),
     redisUrl: connectionUrl(source, 'REDIS_URL', ['redis:', 'rediss:']),
     storageRoot: resolve(required(source, 'STORAGE_ROOT')),
+    maxUploadBytes,
+    projectQuotaBytes,
+    minDiskFreeBytes,
+    maxConcurrentUploads,
+    uploadTimeoutMs,
+    maxConcurrentDownloads,
+    downloadTimeoutMs,
     corsOrigins,
     jwtAccessSecret,
     jwtRefreshSecret,

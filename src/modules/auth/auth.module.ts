@@ -22,7 +22,9 @@ import { TrustedOriginGuard } from './trusted-origin.guard.js';
     AuthService,
     SessionsRepository,
     TrustedOriginGuard,
-    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    JwtAuthGuard,
+    { provide: APP_GUARD, useExisting: JwtAuthGuard },
   ],
+  exports: [JwtAuthGuard],
 })
 export class AuthModule {}

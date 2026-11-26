@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { ValidatedEnvironment } from '../../config/env.validation.js';
 
 const projectFields = {
   id: true,
@@ -10,11 +12,18 @@ const projectFields = {
 
 @Injectable()
 export class ProjectsRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService<ValidatedEnvironment, true>,
+  ) {}
 
   create(ownerId: string, name: string) {
     return this.prisma.project.create({
-      data: { ownerId, name },
+      data: {
+        ownerId,
+        name,
+        quotaBytes: BigInt(this.config.getOrThrow('projectQuotaBytes')),
+      },
       select: projectFields,
     });
   }
@@ -34,6 +43,18 @@ export class ProjectsRepository {
     });
   }
 
+  findOwnedUsage(ownerId: string, id: string) {
+    return this.prisma.project.findFirst({
+      where: { id, ownerId },
+      select: {
+        id: true,
+        quotaBytes: true,
+        usedBytes: true,
+        reservedBytes: true,
+      },
+    });
+  }
+
   async renameOwned(ownerId: string, id: string, name: string) {
     const result = await this.prisma.project.updateMany({
       where: { id, ownerId },
@@ -44,9 +65,24 @@ export class ProjectsRepository {
   }
 
   async deleteOwned(ownerId: string, id: string) {
-    const result = await this.prisma.project.deleteMany({
-      where: { id, ownerId },
-    });
-    return result.count > 0;
+    try {
+      const result = await this.prisma.project.deleteMany({
+        where: { id, ownerId, files: { none: {} } },
+      });
+      if (result.count > 0) return 'deleted' as const;
+    } catch (error) {
+      if (
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        error.code === 'P2003'
+      ) {
+        return 'has-files' as const;
+      }
+      throw error;
+    }
+    return (await this.findOwned(ownerId, id))
+      ? ('has-files' as const)
+      : ('not-found' as const);
   }
 }
