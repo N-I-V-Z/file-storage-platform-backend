@@ -70,7 +70,11 @@ export class AuthController {
 
   @Get('me')
   me(@CurrentUser() principal: AuthPrincipal) {
-    return { id: principal.userId, email: principal.email };
+    return {
+      id: principal.userId,
+      email: principal.email,
+      role: principal.role,
+    };
   }
 
   @Post('logout')
