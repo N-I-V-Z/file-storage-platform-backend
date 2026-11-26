@@ -8,7 +8,7 @@ All `/api/v1/admin/*` endpoints require a Bearer access token for a user whose *
 | `GET /admin/projects?page=1&pageSize=20` | Newest projects, owner ID, project name, quota balances and creation time. |
 | `GET /admin/audit-events?page=1&pageSize=20&projectId=<uuid>` | Minimal audit events across projects, including deleted projects still inside their retention window. The project filter is optional. |
 
-List page numbers start at 1 and page sizes are 1–100. Invalid values return `400`. Items are ordered by creation/event time descending with UUID as a stable tie-breaker. These reports contain no password hash, API key secret/hash, file name, storage key, or filesystem path. They offer no mutation routes.
+List page numbers are 1–1,000,000 and page sizes are 1–100. Invalid values return `400`. Items are ordered by creation/event time descending with UUID as a stable tie-breaker. These reports contain no password hash, API key secret/hash, file name, storage key, or filesystem path. They offer no mutation routes.
 
 ## Granting or revoking the first admin
 

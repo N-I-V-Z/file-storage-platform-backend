@@ -137,7 +137,9 @@ describe('admin reports (e2e)', () => {
 
     for (const path of [
       '/api/v1/admin/projects?page=0',
+      '/api/v1/admin/projects?page=1000001',
       '/api/v1/admin/projects?pageSize=101',
+      '/api/v1/admin/audit-events?page=1000001',
       '/api/v1/admin/audit-events?projectId=not-a-uuid',
     ]) {
       await request(app.getHttpServer())
