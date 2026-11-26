@@ -15,6 +15,9 @@ export interface ValidatedEnvironment {
   uploadTimeoutMs: number;
   maxConcurrentDownloads: number;
   downloadTimeoutMs: number;
+  clamdHost: string;
+  clamdPort: number;
+  scanTimeoutMs: number;
   corsOrigins: string[];
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
@@ -100,7 +103,19 @@ export function validateEnvironment(
     'MAX_UPLOAD_BYTES',
     512 * 1024 * 1024,
     1,
-    1024 * 1024 * 1024 * 1024,
+    512 * 1024 * 1024,
+  );
+  const clamdHost = (source.CLAMD_HOST ?? '127.0.0.1').trim();
+  if (!/^[a-zA-Z0-9.-]+$/.test(clamdHost)) {
+    throw new Error('CLAMD_HOST must be a hostname or IPv4 address');
+  }
+  const clamdPort = integerLimit(source, 'CLAMD_PORT', 3310, 1, 65535);
+  const scanTimeoutMs = integerLimit(
+    source,
+    'SCAN_TIMEOUT_MS',
+    300_000,
+    1000,
+    900_000,
   );
   const projectQuotaBytes = integerLimit(
     source,
@@ -181,6 +196,9 @@ export function validateEnvironment(
     uploadTimeoutMs,
     maxConcurrentDownloads,
     downloadTimeoutMs,
+    clamdHost,
+    clamdPort,
+    scanTimeoutMs,
     corsOrigins,
     jwtAccessSecret,
     jwtRefreshSecret,

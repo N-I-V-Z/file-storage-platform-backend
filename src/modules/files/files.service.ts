@@ -10,6 +10,8 @@ import {
   NotFoundException,
   PayloadTooLargeException,
   RequestTimeoutException,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Busboy from 'busboy';
@@ -24,6 +26,10 @@ import { FoldersService } from '../folders/folders.service.js';
 import { FileInspector } from './file-inspector.js';
 import { matchesSignature, supportsMimeType } from './file-signatures.js';
 import type { UploadAuditRequest } from './file-upload.guard.js';
+import {
+  MALWARE_SCANNER,
+  type MalwareScanner,
+} from '../../infrastructure/scanner/scanner-adapter.js';
 
 interface PendingUpload {
   id: string;
@@ -39,6 +45,7 @@ export class FilesService {
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,
     private readonly quotas: QuotasRepository,
     private readonly folders: FoldersService,
+    @Inject(MALWARE_SCANNER) private readonly scanner: MalwareScanner,
   ) {}
 
   async upload(request: Request, projectId: string) {
@@ -183,11 +190,21 @@ export class FilesService {
       if (expectedSha256 && file.sha256 !== expectedSha256) {
         throw new BadRequestException('Checksum mismatch');
       }
+      let verdict: 'clean' | 'infected';
+      try {
+        verdict = await this.scanner.scan(file.storageKey, abort.signal);
+      } catch {
+        throw new ServiceUnavailableException('Malware scanner unavailable');
+      }
+      if (verdict !== 'clean') {
+        throw new UnprocessableEntityException('Malware detected');
+      }
       await this.storage.promote(file.storageKey);
       const ready = await this.quotas.finalize(
         file.id,
         BigInt(file.sizeBytes),
         file.sha256,
+        new Date(),
         (request as UploadAuditRequest).auditActor,
       );
       if (!ready) throw new Error('Upload reservation expired');

@@ -29,6 +29,9 @@ describe('validateEnvironment', () => {
       uploadTimeoutMs: 600_000,
       maxConcurrentDownloads: 16,
       downloadTimeoutMs: 600_000,
+      clamdHost: '127.0.0.1',
+      clamdPort: 3310,
+      scanTimeoutMs: 300_000,
       corsOrigins: ['http://localhost:3000', 'https://app.example.com'],
       jwtAccessSecret: valid.JWT_ACCESS_SECRET,
       jwtRefreshSecret: valid.JWT_REFRESH_SECRET,
@@ -45,6 +48,21 @@ describe('validateEnvironment', () => {
     expect(() =>
       validateEnvironment({ ...valid, MAX_CONCURRENT_UPLOADS: '1000' }),
     ).toThrow(/MAX_CONCURRENT_UPLOADS/);
+    expect(() =>
+      validateEnvironment({ ...valid, MAX_UPLOAD_BYTES: '536870913' }),
+    ).toThrow(/MAX_UPLOAD_BYTES/);
+  });
+
+  it('rejects invalid scanner settings', () => {
+    expect(() => validateEnvironment({ ...valid, CLAMD_HOST: '' })).toThrow(
+      /CLAMD_HOST/,
+    );
+    expect(() =>
+      validateEnvironment({ ...valid, CLAMD_PORT: '70000' }),
+    ).toThrow(/CLAMD_PORT/);
+    expect(() =>
+      validateEnvironment({ ...valid, SCAN_TIMEOUT_MS: '0' }),
+    ).toThrow(/SCAN_TIMEOUT_MS/);
   });
 
   it('rejects missing database connection before startup', () => {

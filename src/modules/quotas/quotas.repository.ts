@@ -54,6 +54,7 @@ export class QuotasRepository {
     id: string,
     sizeBytes: bigint,
     sha256: string,
+    scannedAt: Date,
     actor?: { actorType: 'USER' | 'API_KEY'; actorId: string },
   ) {
     return this.prisma.$transaction(async (tx) => {
@@ -64,7 +65,7 @@ export class QuotasRepository {
       }
       const changed = await tx.storedFile.updateMany({
         where: { id, status: 'UPLOADING' },
-        data: { status: 'READY', sizeBytes, sha256 },
+        data: { status: 'READY', sizeBytes, sha256, scannedAt },
       });
       if (changed.count === 0) return null;
       await tx.project.update({

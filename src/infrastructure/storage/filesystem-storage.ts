@@ -1,4 +1,4 @@
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { lstat, mkdir, open, rename, statfs, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { StorageAdapter } from './storage-adapter.js';
@@ -37,6 +37,12 @@ export class FilesystemStorage implements StorageAdapter {
     return createWriteStream(this.temporaryPath(id), {
       flags: 'wx',
       mode: 0o600,
+    });
+  }
+
+  openTemporary(id: string) {
+    return createReadStream(this.temporaryPath(id), {
+      highWaterMark: 64 * 1024,
     });
   }
 

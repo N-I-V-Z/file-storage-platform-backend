@@ -17,22 +17,48 @@ import {
   type StorageAdapter,
 } from '../src/infrastructure/storage/storage-adapter.js';
 import { FilesService } from '../src/modules/files/files.service.js';
+import { MALWARE_SCANNER } from '../src/infrastructure/scanner/scanner-adapter.js';
 
 describe('streaming upload (e2e)', () => {
   let app: INestApplication;
   let root: string;
+  let accountAuth: string;
   const email = `upload-${randomUUID()}@example.com`;
   const emails = [email];
+  let scannerMode: 'clean' | 'infected' | 'offline' = 'clean';
 
   beforeAll(async () => {
     root = await mkdtemp(join(tmpdir(), 'fsp-upload-'));
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(STORAGE_ADAPTER)
       .useFactory({ factory: () => new FilesystemStorage(root) })
+      .overrideProvider(MALWARE_SCANNER)
+      .useValue({
+        scan: async (storageKey: string) => {
+          if (scannerMode === 'offline') throw new Error('scanner unavailable');
+          let bytes = 0;
+          for await (const chunk of app
+            .get<StorageAdapter>(STORAGE_ADAPTER)
+            .openTemporary(storageKey)) {
+            bytes += Buffer.from(chunk).length;
+          }
+          if (bytes === 0) throw new Error('No temporary upload to scan');
+          return scannerMode;
+        },
+      })
       .compile();
     app = module.createNestApplication();
     configureHttp(app, app.get(ConfigService));
     await app.init();
+    await request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({ email, password: 'long-test-password' })
+      .expect(201);
+    const login = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ email, password: 'long-test-password' })
+      .expect(200);
+    accountAuth = `Bearer ${login.body.data.accessToken as string}`;
   });
 
   afterAll(async () => {
@@ -47,19 +73,57 @@ describe('streaming upload (e2e)', () => {
     if (root) await rm(root, { recursive: true, force: true });
   });
 
-  it('streams a signed file and returns ready metadata', async () => {
-    await request(app.getHttpServer())
-      .post('/api/v1/auth/register')
-      .send({ email, password: 'long-test-password' })
-      .expect(201);
-    const login = await request(app.getHttpServer())
-      .post('/api/v1/auth/login')
-      .send({ email, password: 'long-test-password' })
-      .expect(200);
-    const auth = `Bearer ${login.body.data.accessToken as string}`;
+  async function scannerFixture() {
     const project = await request(app.getHttpServer())
       .post('/api/v1/projects')
-      .set('Authorization', auth)
+      .set('Authorization', accountAuth)
+      .send({ name: 'Scanner fixture' })
+      .expect(201);
+    return project.body.data.id as string;
+  }
+
+  async function expectRejectedScan(status: number) {
+    const projectId = await scannerFixture();
+    await request(app.getHttpServer())
+      .post(`/api/v1/projects/${projectId}/files`)
+      .set('Authorization', accountAuth)
+      .attach('file', Buffer.from('%PDF-1.7\nscanner fixture'), {
+        filename: 'scan.pdf',
+        contentType: 'application/pdf',
+      })
+      .expect(status);
+    const prisma = app.get(PrismaService);
+    expect(await prisma.storedFile.count({ where: { projectId } })).toBe(0);
+    const project = await prisma.project.findUniqueOrThrow({
+      where: { id: projectId },
+    });
+    expect(project.usedBytes).toBe(0n);
+    expect(project.reservedBytes).toBe(0n);
+    expect(await readdir(join(root, 'temporary'))).toEqual([]);
+  }
+
+  it('rejects detected malware without retaining bytes or quota', async () => {
+    scannerMode = 'infected';
+    try {
+      await expectRejectedScan(422);
+    } finally {
+      scannerMode = 'clean';
+    }
+  });
+
+  it('fails closed when the scanner is unavailable', async () => {
+    scannerMode = 'offline';
+    try {
+      await expectRejectedScan(503);
+    } finally {
+      scannerMode = 'clean';
+    }
+  });
+
+  it('streams a signed file and returns ready metadata', async () => {
+    const project = await request(app.getHttpServer())
+      .post('/api/v1/projects')
+      .set('Authorization', accountAuth)
       .send({ name: 'Upload' })
       .expect(201);
     const projectId = project.body.data.id as string;
@@ -70,7 +134,7 @@ describe('streaming upload (e2e)', () => {
     const digest = createHash('sha256').update(bytes).digest('hex');
     const response = await request(app.getHttpServer())
       .post(`/api/v1/projects/${projectId}/files`)
-      .set('Authorization', auth)
+      .set('Authorization', accountAuth)
       .set('X-Content-SHA256', digest)
       .attach('file', bytes, {
         filename: 'picture.png',
@@ -94,6 +158,7 @@ describe('streaming upload (e2e)', () => {
       where: { id: response.body.data.id as string },
     });
     expect(stored.status).toBe('READY');
+    expect(stored.scannedAt).toBeInstanceOf(Date);
   });
 
   it('uploads into a project folder and rejects missing or foreign folders', async () => {

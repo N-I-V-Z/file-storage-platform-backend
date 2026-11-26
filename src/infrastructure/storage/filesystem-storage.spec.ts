@@ -35,6 +35,10 @@ describe('FilesystemStorage', () => {
     ]);
     const id = randomUUID();
     await pipeline(Readable.from(['file bytes']), storage.createTemporary(id));
+    const temporary = storage.openTemporary(id);
+    const chunks: Buffer[] = [];
+    for await (const chunk of temporary) chunks.push(Buffer.from(chunk));
+    expect(Buffer.concat(chunks).toString()).toBe('file bytes');
     await storage.promote(id);
     expect(await readFile(storage.objectPath(id), 'utf8')).toBe('file bytes');
     const handle = await storage.openObject(id);

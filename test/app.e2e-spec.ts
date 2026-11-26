@@ -54,7 +54,7 @@ describe('AppController (e2e)', () => {
           app.get(ConfigService).getOrThrow<number>('uploadTimeoutMs') +
           9 * 60_000,
       );
-      await quota.finalize(accepted!.id, 40n, 'a'.repeat(64));
+      await quota.finalize(accepted!.id, 40n, 'a'.repeat(64), new Date());
       const updated = await prisma.project.findUniqueOrThrow({
         where: { id: project.id },
       });
