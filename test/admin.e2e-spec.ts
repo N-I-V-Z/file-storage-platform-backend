@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module.js';
@@ -53,6 +54,25 @@ describe('admin reports (e2e)', () => {
     await request(app.getHttpServer())
       .get('/api/v1/admin/overview')
       .set('Authorization', userAuth)
+      .expect(403);
+    const jwt = app.get(JwtService);
+    const secret = app.get(ConfigService).getOrThrow<string>('jwtAccessSecret');
+    const verified = await jwt.verifyAsync<{
+      sub: string;
+      sid: string;
+      typ: string;
+    }>(userAuth.slice(7), {
+      secret,
+      issuer: 'file-storage-platform',
+      audience: 'file-storage-web',
+    });
+    const roleClaimToken = await jwt.signAsync(
+      { sub: verified.sub, sid: verified.sid, typ: 'access', role: 'ADMIN' },
+      { secret, issuer: 'file-storage-platform', audience: 'file-storage-web' },
+    );
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/overview')
+      .set('Authorization', `Bearer ${roleClaimToken}`)
       .expect(403);
     const me = await request(app.getHttpServer())
       .get('/api/v1/auth/me')
