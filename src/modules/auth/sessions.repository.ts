@@ -19,7 +19,7 @@ export class SessionsRepository {
   findById(id: string) {
     return this.prisma.session.findUnique({
       where: { id },
-      include: { user: { select: { id: true, email: true } } },
+      include: { user: { select: { id: true, email: true, role: true } } },
     });
   }
 

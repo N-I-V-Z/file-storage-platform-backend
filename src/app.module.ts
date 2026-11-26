@@ -11,6 +11,7 @@ import { ApiKeysModule } from './modules/api-keys/api-keys.module.js';
 import { QuotasModule } from './modules/quotas/quotas.module.js';
 import { FilesModule } from './modules/files/files.module.js';
 import { FoldersModule } from './modules/folders/folders.module.js';
+import { AdminModule } from './modules/admin/admin.module.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
@@ -28,6 +29,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     QuotasModule,
     FilesModule,
     FoldersModule,
+    AdminModule,
     AuditModule,
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com,

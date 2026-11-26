@@ -13,10 +13,16 @@ model User {
   passwordHash String    @map("password_hash") @db.VarChar(255)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  role         UserRole  @default(USER)
   sessions     Session[]
   projects     Project[]
 
   @@map("users")
+}
+
+enum UserRole {
+  USER
+  ADMIN
 }
 
 model Session {

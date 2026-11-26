@@ -11,6 +11,7 @@ import type { Request } from 'express';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
 import { SessionsRepository } from './sessions.repository.js';
 import { AUTH_PUBLIC_KEY } from './public.decorator.js';
+import type { UserRole } from '../../generated/prisma/enums.js';
 
 interface AccessClaims {
   sub: string;
@@ -22,6 +23,7 @@ export interface AuthPrincipal {
   userId: string;
   email: string;
   sessionId: string;
+  role: UserRole;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -82,6 +84,7 @@ export class JwtAuthGuard implements CanActivate {
       userId: session.userId,
       email: session.user.email,
       sessionId: session.id,
+      role: session.user.role,
     };
   }
 }
