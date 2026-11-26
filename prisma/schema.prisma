@@ -88,6 +88,7 @@ model StoredFile {
   reservationBytes BigInt           @map("reservation_bytes")
   sizeBytes        BigInt?          @map("size_bytes")
   sha256           String?          @db.VarChar(64)
+  scannedAt        DateTime?        @map("scanned_at") @db.Timestamptz(6)
   expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
