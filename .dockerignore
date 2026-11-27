@@ -1,0 +1,16 @@
+.git
+.github
+.husky
+.env*
+.local-storage
+.temp
+.tmp
+node_modules
+dist
+coverage
+test
+docs
+ops
+*.log
+*.tsbuildinfo
+README.md
