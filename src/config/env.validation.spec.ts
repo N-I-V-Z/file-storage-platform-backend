@@ -19,6 +19,7 @@ describe('validateEnvironment', () => {
     expect(validateEnvironment(valid)).toEqual({
       nodeEnv: 'development',
       port: 4000,
+      host: '0.0.0.0',
       databaseUrl: valid.DATABASE_URL,
       redisUrl: valid.REDIS_URL,
       storageRoot: resolve('./.local-storage'),
@@ -87,6 +88,24 @@ describe('validateEnvironment', () => {
         CORS_ORIGINS: 'http://localhost:3000/private',
       }),
     ).toThrow(/CORS_ORIGINS/);
+  });
+
+  it('binds production to loopback and requires HTTPS browser origins', () => {
+    const production = {
+      ...valid,
+      NODE_ENV: 'production',
+      CORS_ORIGINS: 'https://app.example.com',
+    };
+    expect(validateEnvironment(production).host).toBe('127.0.0.1');
+    expect(() =>
+      validateEnvironment({
+        ...production,
+        CORS_ORIGINS: 'http://app.example.com',
+      }),
+    ).toThrow(/HTTPS/);
+    expect(() =>
+      validateEnvironment({ ...production, HOST: 'example.com' }),
+    ).toThrow(/HOST/);
   });
 
   it('requires distinct, strong authentication secrets', () => {
