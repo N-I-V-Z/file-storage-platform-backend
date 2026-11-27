@@ -1,6 +1,6 @@
 # Single VPS operations
 
-For the container deployment, use the portable `file-storage-platform-infra/compose.production.yaml` bundle and its `README.production.md`. The host process instructions below describe the non-container deployment path.
+For the current InstaBox container deployment, use `file-storage-platform-infra/compose.instabox.yaml` and `README.instabox.md`. The generic VPS bundle is documented in `README.production.md`. The host process instructions below describe the non-container deployment path.
 
 This deployment keeps one Next.js process, one NestJS process, PostgreSQL, Redis, ClamAV and a private filesystem on an 8 GiB RAM / 20 GB disk VPS. Keep one API instance: upload reservations, active stream limits and rate limits currently use process-local state. Do not deploy a second API instance until these controls have a shared coordinator.
 
