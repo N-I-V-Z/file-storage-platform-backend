@@ -11,7 +11,9 @@ export type AuditAction =
   | 'FILE_TRASHED'
   | 'FILE_RESTORED'
   | 'FILE_PURGE_REQUESTED'
-  | 'FILE_PURGED';
+  | 'FILE_PURGED'
+  | 'SHARE_LINK_CREATED'
+  | 'SHARE_LINK_REVOKED';
 
 export interface AuditEntry {
   projectId: string;

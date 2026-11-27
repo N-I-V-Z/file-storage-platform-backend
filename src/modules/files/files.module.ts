@@ -44,5 +44,6 @@ import { ScannerModule } from '../../infrastructure/scanner/scanner.module.js';
     FileTrashReconciler,
     UploadReconciler,
   ],
+  exports: [FileDownloadService],
 })
 export class FilesModule {}
