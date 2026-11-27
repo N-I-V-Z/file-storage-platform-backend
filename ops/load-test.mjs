@@ -142,7 +142,7 @@ export async function runLoad(options, fetcher = fetch) {
           200,
         );
         const full = Buffer.from(await download.arrayBuffer());
-        downloadMs.push(performance.now() - startDownload);
+        const downloadDuration = performance.now() - startDownload;
         if (!full.equals(bytes))
           throw new Error('Downloaded bytes do not match sample');
         const end = Math.min(bytes.length - 1, 15);
@@ -159,6 +159,7 @@ export async function runLoad(options, fetcher = fetch) {
           )
         )
           throw new Error('Range bytes do not match sample');
+        downloadMs.push(downloadDuration);
         transferredBytes += full.length + end + 1;
       } catch (error) {
         failures.push({
