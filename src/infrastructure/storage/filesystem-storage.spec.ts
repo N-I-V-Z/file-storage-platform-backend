@@ -5,6 +5,7 @@ import {
   readdir,
   rm,
   symlink,
+  writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -54,5 +55,17 @@ describe('FilesystemStorage', () => {
     await mkdir(target);
     await symlink(target, join(root, 'temporary'), 'junction');
     await expect(new FilesystemStorage(root).init()).rejects.toThrow();
+  });
+
+  it('reports temporary file count and bytes without reading file contents', async () => {
+    const storage = new FilesystemStorage(root);
+    await storage.init();
+    await writeFile(join(root, 'temporary', randomUUID()), '12345');
+    await writeFile(join(root, 'temporary', randomUUID()), 'abc');
+    expect(await storage.temporaryUsage()).toEqual({
+      bytes: 8n,
+      files: 2,
+      truncated: false,
+    });
   });
 });

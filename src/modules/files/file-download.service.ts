@@ -52,6 +52,10 @@ function contentDisposition(filename: string): string {
 export class FileDownloadService {
   private activeDownloads = 0;
 
+  getActiveDownloads(): number {
+    return this.activeDownloads;
+  }
+
   constructor(
     private readonly files: FilesRepository,
     private readonly config: ConfigService<ValidatedEnvironment, true>,

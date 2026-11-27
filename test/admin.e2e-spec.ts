@@ -49,6 +49,13 @@ describe('admin reports (e2e)', () => {
 
   it('denies anonymous users and regular accounts', async () => {
     await request(app.getHttpServer())
+      .get('/api/v1/admin/operations')
+      .expect(401);
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/operations')
+      .set('Authorization', userAuth)
+      .expect(403);
+    await request(app.getHttpServer())
       .get('/api/v1/admin/overview')
       .expect(401);
     await request(app.getHttpServer())
@@ -128,6 +135,20 @@ describe('admin reports (e2e)', () => {
     expect(BigInt(overview.body.data.quotaBytes)).toBeGreaterThanOrEqual(
       10737418240n,
     );
+    const operations = await request(app.getHttpServer())
+      .get('/api/v1/admin/operations')
+      .set('Authorization', userAuth)
+      .expect(200);
+    expect(operations.body.data).toMatchObject({
+      diskFreeBytes: expect.stringMatching(/^\d+$/),
+      temporaryBytes: expect.stringMatching(/^\d+$/),
+      activeUploads: expect.any(Number),
+      activeDownloads: expect.any(Number),
+      temporaryFiles: expect.any(Number),
+    });
+    expect(operations.headers['cache-control']).toContain('no-store');
+    expect(JSON.stringify(operations.body)).not.toContain('storageRoot');
+    expect(JSON.stringify(operations.body)).not.toContain('jwtAccessSecret');
 
     const projects = await request(app.getHttpServer())
       .get('/api/v1/admin/projects?page=1&pageSize=1')
