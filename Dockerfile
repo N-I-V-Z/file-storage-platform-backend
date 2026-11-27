@@ -5,6 +5,8 @@ ENV PATH="${PNPM_HOME}:${PATH}"
 ENV HUSKY=0
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@12.21.0 --activate
 
 FROM base AS build
@@ -25,6 +27,8 @@ ENV PORT=4000
 ENV HOST=0.0.0.0
 WORKDIR /app
 
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=production-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package.json ./package.json
