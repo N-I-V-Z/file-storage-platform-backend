@@ -9,7 +9,7 @@ All `/api/v1/admin/*` endpoints require a Bearer access token for a user whose *
 | `GET /admin/audit-events?page=1&pageSize=20&projectId=<uuid>` | Minimal audit events across projects, including deleted projects still inside their retention window. The project filter is optional. |
 | `GET /admin/operations` | Process-local `activeUploads`, `activeDownloads`, `processRssBytes`, `processUptimeSeconds`, plus storage `diskFreeBytes`, `minDiskFreeBytes`, `temporaryBytes`, `temporaryFiles` and `temporaryTruncated`. Byte fields are decimal strings. |
 
-List page numbers are 1–1,000,000 and page sizes are 1–100. Invalid values return `400`. Items are ordered by creation/event time descending with UUID as a stable tie-breaker. The operations snapshot scans up to 10,000 regular temporary files; `temporaryTruncated: true` means the count and bytes are lower bounds and the directory needs operator inspection. Process counters reset on restart and do not aggregate multiple API instances. These reports contain no password hash, API key secret/hash, file name, storage key, or filesystem path. They offer no mutation routes.
+List page numbers are 1–1,000,000 and page sizes are 1–100. Invalid values return `400`. Items are ordered by creation/event time descending with UUID as a stable tie-breaker. The operations snapshot scans up to 10,000 temporary directory entries; `temporaryTruncated: true` means the file count and bytes are lower bounds and the directory needs operator inspection. Process counters reset on restart and do not aggregate multiple API instances. These reports contain no password hash, API key secret/hash, file name, storage key, or filesystem path. They offer no mutation routes.
 
 ## Granting or revoking the first admin
 

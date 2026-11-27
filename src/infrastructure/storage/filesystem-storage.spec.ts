@@ -67,5 +67,9 @@ describe('FilesystemStorage', () => {
       files: 2,
       truncated: false,
     });
+    expect(await storage.temporaryUsage(1)).toMatchObject({
+      files: 1,
+      truncated: true,
+    });
   });
 });
