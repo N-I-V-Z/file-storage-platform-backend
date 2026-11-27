@@ -5,6 +5,7 @@ import {
   mkdir,
   readFile,
   rm,
+  stat,
   symlink,
   writeFile,
 } from 'node:fs/promises';
@@ -23,6 +24,51 @@ test('PostgreSQL URL keeps special password characters out of command arguments'
   assert.equal(env.PGDATABASE, 'files');
   assert.equal(env.PGSSLMODE, 'require');
   assert.equal(env.DATABASE_URL, undefined);
+});
+
+test('restore drill removes its new database and directory after failed restore', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'fsp-ops-'));
+  const live = join(root, 'live');
+  const bundle = join(root, 'bundle');
+  const target = join(root, 'drill');
+  const calls = [];
+  try {
+    await mkdir(live);
+    await mkdir(bundle);
+    await writeFile(join(bundle, 'database.dump'), 'database');
+    await writeFile(join(bundle, 'storage.tar.gz'), 'storage');
+    await writeFile(
+      join(bundle, 'manifest.json'),
+      JSON.stringify({
+        version: 1,
+        databaseSha256: createHash('sha256').update('database').digest('hex'),
+        storageSha256: createHash('sha256').update('storage').digest('hex'),
+      }),
+    );
+    const runner = async (command, args) => {
+      calls.push(command);
+      if (command === 'tar' && args[0] === '-tzf') return 'objects/\n';
+      if (command === 'tar' && args[0] === '-tvzf')
+        return 'drwx------ objects/\n';
+      if (command === 'pg_restore' && args.includes('--exit-on-error'))
+        throw new Error('simulated restore failure');
+      return '';
+    };
+    await assert.rejects(
+      restoreDrill({
+        bundle,
+        target,
+        storageRoot: live,
+        databaseUrl: 'postgresql://operator:secret@localhost/files',
+        runner,
+      }),
+      /simulated restore failure/,
+    );
+    assert.ok(calls.includes('dropdb'));
+    await assert.rejects(stat(target), { code: 'ENOENT' });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('backup refuses a destination inside the live storage tree', async () => {

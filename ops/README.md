@@ -17,7 +17,7 @@ Run a drill on an isolated host with enough space for the database and files. Su
 pnpm ops:restore-drill /mnt/private-backups/backup-<id> /mnt/restore-drill/files
 ```
 
-Record the reported database name, file count, duration, and backup ID. Inspect the restored app against that database and storage tree before removing drill resources with `dropdb <reported-name>` and deleting the newly created target directory. Never point the application at the drill database until a separate recovery decision is made. Neither script overwrites the live database or storage tree.
+Record the reported database name, file count, duration, and backup ID. Inspect the restored app against that database and storage tree before removing drill resources with `dropdb <reported-name>` and deleting the newly created target directory. A failed restore attempts to remove only the newly created drill database and directory; if cleanup fails, the error prints their names for manual inspection. Never point the application at the drill database until a separate recovery decision is made. Neither script overwrites the live database or storage tree.
 
 ## Bounded transfer rehearsal
 

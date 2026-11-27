@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, readFile, realpath, stat } from 'node:fs/promises';
+import { lstat, mkdir, readFile, realpath, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { assertSeparate, postgresEnvironment, run, sha256 } from './common.mjs';
@@ -70,75 +70,104 @@ export async function restoreDrill({
     throw new Error('Storage archive contains links or special files');
   process.umask(0o077);
   const dbName = `fsp_drill_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  await runner('createdb', ['--template=template0', dbName], pgEnv);
-  await mkdir(targetRoot, { mode: 0o700 });
-  await runner(
-    'pg_restore',
-    [
-      '--exit-on-error',
-      '--no-owner',
-      '--no-privileges',
-      '--dbname',
-      dbName,
-      database,
-    ],
-    pgEnv,
-  );
-  await runner(
-    'tar',
-    [
-      '-xzf',
-      storage,
-      '-C',
-      targetRoot,
-      '--no-same-owner',
-      '--no-same-permissions',
-    ],
-    process.env,
-  );
-  const rows = await runner(
-    'psql',
-    [
-      '--no-psqlrc',
-      '--tuples-only',
-      '--no-align',
-      '--field-separator',
-      '|',
-      '--dbname',
-      dbName,
-      '--command',
-      "SELECT storage_key, size_bytes, sha256 FROM stored_files WHERE status IN ('READY', 'TRASHED') ORDER BY storage_key",
-    ],
-    pgEnv,
-    true,
-  );
-  let fileRecords = 0;
-  for (const row of rows.trim().split(/\r?\n/)) {
-    if (!row) continue;
-    const [storageKey, size, digest] = row.split('|');
-    if (
-      !/^[0-9a-f-]{36}$/.test(storageKey) ||
-      !/^\d+$/.test(size) ||
-      !/^[a-f0-9]{64}$/.test(digest)
-    )
-      throw new Error('Invalid restored file metadata');
-    const object = join(
-      targetRoot,
-      'objects',
-      storageKey.slice(0, 2),
-      storageKey,
+  let createdDatabase = false;
+  let createdTarget = false;
+  try {
+    await runner('createdb', ['--template=template0', dbName], pgEnv);
+    createdDatabase = true;
+    await mkdir(targetRoot, { mode: 0o700 });
+    createdTarget = true;
+    await runner(
+      'pg_restore',
+      [
+        '--exit-on-error',
+        '--no-owner',
+        '--no-privileges',
+        '--dbname',
+        dbName,
+        database,
+      ],
+      pgEnv,
     );
-    const file = await lstat(object);
-    if (
-      !file.isFile() ||
-      file.isSymbolicLink() ||
-      BigInt(file.size) !== BigInt(size) ||
-      (await sha256(object)) !== digest
-    )
-      throw new Error(`Restored object mismatch: ${storageKey}`);
-    fileRecords++;
+    await runner(
+      'tar',
+      [
+        '-xzf',
+        storage,
+        '-C',
+        targetRoot,
+        '--no-same-owner',
+        '--no-same-permissions',
+      ],
+      process.env,
+    );
+    const rows = await runner(
+      'psql',
+      [
+        '--no-psqlrc',
+        '--tuples-only',
+        '--no-align',
+        '--field-separator',
+        '|',
+        '--dbname',
+        dbName,
+        '--command',
+        "SELECT storage_key, size_bytes, sha256 FROM stored_files WHERE status IN ('READY', 'TRASHED') ORDER BY storage_key",
+      ],
+      pgEnv,
+      true,
+    );
+    let fileRecords = 0;
+    for (const row of rows.trim().split(/\r?\n/)) {
+      if (!row) continue;
+      const [storageKey, size, digest] = row.split('|');
+      if (
+        !/^[0-9a-f-]{36}$/.test(storageKey) ||
+        !/^\d+$/.test(size) ||
+        !/^[a-f0-9]{64}$/.test(digest)
+      )
+        throw new Error('Invalid restored file metadata');
+      const object = join(
+        targetRoot,
+        'objects',
+        storageKey.slice(0, 2),
+        storageKey,
+      );
+      const file = await lstat(object);
+      if (
+        !file.isFile() ||
+        file.isSymbolicLink() ||
+        BigInt(file.size) !== BigInt(size) ||
+        (await sha256(object)) !== digest
+      )
+        throw new Error(`Restored object mismatch: ${storageKey}`);
+      fileRecords++;
+    }
+    return { dbName, targetRoot, fileRecords };
+  } catch (error) {
+    const cleanupFailures = [];
+    if (createdTarget) {
+      try {
+        if ((await realpath(targetRoot)) !== effectiveTarget)
+          throw new Error('Target changed');
+        await rm(targetRoot, { recursive: true, force: true });
+      } catch {
+        cleanupFailures.push(`directory ${targetRoot}`);
+      }
+    }
+    if (createdDatabase) {
+      try {
+        await runner('dropdb', ['--if-exists', dbName], pgEnv);
+      } catch {
+        cleanupFailures.push(`database ${dbName}`);
+      }
+    }
+    if (cleanupFailures.length)
+      throw new Error(
+        `Restore failed: ${error.message}. Manual cleanup required for ${cleanupFailures.join(' and ')}`,
+      );
+    throw error;
   }
-  return { dbName, targetRoot, fileRecords };
 }
 
 if (
