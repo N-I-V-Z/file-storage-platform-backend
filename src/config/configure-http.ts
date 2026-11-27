@@ -36,6 +36,13 @@ export function configureHttp(
   app.enableCors({
     origin: config.getOrThrow('corsOrigins'),
     credentials: true,
+    exposedHeaders: [
+      'Content-Disposition',
+      'Content-Length',
+      'Content-Type',
+      'Accept-Ranges',
+      'ETag',
+    ],
   });
   app.setGlobalPrefix('api', {
     exclude: [

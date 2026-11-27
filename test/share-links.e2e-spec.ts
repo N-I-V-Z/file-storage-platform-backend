@@ -128,6 +128,9 @@ describe('scanned file share links (e2e)', () => {
       .set('Authorization', `Share ${token}`)
       .expect(200);
     expect(Number(head.headers['content-length'])).toBe(bytes.length);
+    expect(head.headers['access-control-expose-headers']).toContain(
+      'Content-Disposition',
+    );
     const range = await request(app.getHttpServer())
       .get('/api/v1/shared-files/download')
       .set('Authorization', `Share ${token}`)
