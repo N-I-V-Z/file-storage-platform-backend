@@ -11,6 +11,6 @@ async function bootstrap() {
   });
   configureHttp(app, app.get(ConfigService));
   app.enableShutdownHooks();
-  await app.listen(environment.port);
+  await app.listen(environment.port, environment.host);
 }
 await bootstrap();

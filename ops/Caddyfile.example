@@ -1,0 +1,10 @@
+# Replace both example domains before enabling this file. Run Caddy on the VPS host.
+app.example.com {
+	reverse_proxy 127.0.0.1:3000
+}
+
+api.example.com {
+	@internal path /health /ready /api/docs /api/docs-json
+	respond @internal 404
+	reverse_proxy 127.0.0.1:4000
+}

@@ -11,6 +11,11 @@ import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import { QuotasRepository } from './../src/modules/quotas/quotas.repository.js';
 import { ProjectsService } from './../src/modules/projects/projects.service.js';
+import { ClamdProbe } from './../src/infrastructure/scanner/clamd-probe.js';
+import {
+  STORAGE_ADAPTER,
+  type StorageAdapter,
+} from './../src/infrastructure/storage/storage-adapter.js';
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -54,7 +59,7 @@ describe('AppController (e2e)', () => {
           app.get(ConfigService).getOrThrow<number>('uploadTimeoutMs') +
           9 * 60_000,
       );
-      await quota.finalize(accepted!.id, 40n, 'a'.repeat(64));
+      await quota.finalize(accepted!.id, 40n, 'a'.repeat(64), new Date());
       const updated = await prisma.project.findUniqueOrThrow({
         where: { id: project.id },
       });
@@ -118,7 +123,10 @@ describe('AppController (e2e)', () => {
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(ClamdProbe)
+      .useValue({ ping: vi.fn().mockResolvedValue(undefined) })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     configureHttp(app, app.get(ConfigService));
@@ -180,11 +188,14 @@ describe('AppController (e2e)', () => {
     expect(JSON.stringify(response.body)).not.toContain('private');
   });
 
-  it('/ready (GET) checks PostgreSQL and Redis', () => {
+  it('/ready (GET) checks PostgreSQL, Redis, storage and scanner', () => {
     return request(app.getHttpServer())
       .get('/ready')
       .expect(200)
-      .expect({ status: 'ok', services: { postgres: 'up', redis: 'up' } });
+      .expect({
+        status: 'ok',
+        services: { postgres: 'up', redis: 'up', storage: 'up', scanner: 'up' },
+      });
   });
 
   it('/ready (GET) reports a failed dependency without exposing its error', async () => {
@@ -199,7 +210,9 @@ describe('AppController (e2e)', () => {
       success: false,
       error: {
         code: 'SERVICE_UNAVAILABLE',
-        details: [{ postgres: 'up', redis: 'down' }],
+        details: [
+          { postgres: 'up', redis: 'down', storage: 'up', scanner: 'up' },
+        ],
       },
       path: '/ready',
     });
@@ -220,13 +233,42 @@ describe('AppController (e2e)', () => {
       success: false,
       error: {
         code: 'SERVICE_UNAVAILABLE',
-        details: [{ postgres: 'down', redis: 'up' }],
+        details: [
+          { postgres: 'down', redis: 'up', storage: 'up', scanner: 'up' },
+        ],
       },
       path: '/ready',
     });
     expect(JSON.stringify(response.body)).not.toContain(
       'private database detail',
     );
+  });
+
+  it('/ready (GET) reports low storage without disclosing the path', async () => {
+    vi.spyOn(
+      app.get<StorageAdapter>(STORAGE_ADAPTER),
+      'freeBytes',
+    ).mockResolvedValue(0n);
+    const response = await request(app.getHttpServer())
+      .get('/ready')
+      .expect(503);
+    expect(response.body.error.details).toEqual([
+      { postgres: 'up', redis: 'up', storage: 'down', scanner: 'up' },
+    ]);
+    expect(JSON.stringify(response.body)).not.toContain('STORAGE_ROOT');
+  });
+
+  it('/ready (GET) reports scanner failure without leaking connection details', async () => {
+    vi.spyOn(app.get(ClamdProbe), 'ping').mockRejectedValue(
+      new Error('private scanner host'),
+    );
+    const response = await request(app.getHttpServer())
+      .get('/ready')
+      .expect(503);
+    expect(response.body.error.details).toEqual([
+      { postgres: 'up', redis: 'up', storage: 'up', scanner: 'down' },
+    ]);
+    expect(JSON.stringify(response.body)).not.toContain('private scanner host');
   });
 
   it('registers a normalized account without exposing its password hash', async () => {

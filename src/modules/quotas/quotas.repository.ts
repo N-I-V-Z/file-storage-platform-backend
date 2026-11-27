@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ValidatedEnvironment } from '../../config/env.validation.js';
 import { PrismaService } from '../../infrastructure/database/prisma.service.js';
+import { recordAudit } from '../audit/audit-writer.js';
 
 export interface ReserveUpload {
   id: string;
@@ -49,7 +50,13 @@ export class QuotasRepository {
     });
   }
 
-  finalize(id: string, sizeBytes: bigint, sha256: string) {
+  finalize(
+    id: string,
+    sizeBytes: bigint,
+    sha256: string,
+    scannedAt: Date,
+    actor?: { actorType: 'USER' | 'API_KEY'; actorId: string },
+  ) {
     return this.prisma.$transaction(async (tx) => {
       const file = await tx.storedFile.findUnique({ where: { id } });
       if (!file || file.status !== 'UPLOADING') return null;
@@ -58,7 +65,7 @@ export class QuotasRepository {
       }
       const changed = await tx.storedFile.updateMany({
         where: { id, status: 'UPLOADING' },
-        data: { status: 'READY', sizeBytes, sha256 },
+        data: { status: 'READY', sizeBytes, sha256, scannedAt },
       });
       if (changed.count === 0) return null;
       await tx.project.update({
@@ -67,6 +74,13 @@ export class QuotasRepository {
           reservedBytes: { decrement: file.reservationBytes },
           usedBytes: { increment: sizeBytes },
         },
+      });
+      await recordAudit(tx, {
+        projectId: file.projectId,
+        actorType: actor?.actorType ?? 'SYSTEM',
+        actorId: actor?.actorId ?? null,
+        action: 'FILE_UPLOADED',
+        resourceId: id,
       });
       return tx.storedFile.findUniqueOrThrow({ where: { id } });
     });

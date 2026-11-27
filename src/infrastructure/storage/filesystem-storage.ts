@@ -1,5 +1,13 @@
-import { createWriteStream } from 'node:fs';
-import { lstat, mkdir, open, rename, statfs, unlink } from 'node:fs/promises';
+import { createReadStream, createWriteStream } from 'node:fs';
+import {
+  lstat,
+  mkdir,
+  open,
+  opendir,
+  rename,
+  statfs,
+  unlink,
+} from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { StorageAdapter } from './storage-adapter.js';
 
@@ -40,6 +48,12 @@ export class FilesystemStorage implements StorageAdapter {
     });
   }
 
+  openTemporary(id: string) {
+    return createReadStream(this.temporaryPath(id), {
+      highWaterMark: 64 * 1024,
+    });
+  }
+
   objectPath(id: string): string {
     this.requireId(id);
     return join(this.root, 'objects', id.slice(0, 2), id);
@@ -67,6 +81,36 @@ export class FilesystemStorage implements StorageAdapter {
   async freeBytes(): Promise<bigint> {
     const stats = await statfs(this.root);
     return BigInt(stats.bavail) * BigInt(stats.bsize);
+  }
+
+  async temporaryUsage(maxEntries = 10_000): Promise<{
+    bytes: bigint;
+    files: number;
+    truncated: boolean;
+  }> {
+    let bytes = 0n;
+    let files = 0;
+    let scannedEntries = 0;
+    let truncated = false;
+    const directory = await opendir(join(this.root, 'temporary'));
+    for await (const entry of directory) {
+      if (scannedEntries >= maxEntries) {
+        truncated = true;
+        break;
+      }
+      scannedEntries++;
+      if (!entry.isFile()) continue;
+      try {
+        const file = await lstat(join(this.root, 'temporary', entry.name));
+        if (file.isFile() && !file.isSymbolicLink()) {
+          bytes += BigInt(file.size);
+          files++;
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    }
+    return { bytes, files, truncated };
   }
 
   private temporaryPath(id: string): string {

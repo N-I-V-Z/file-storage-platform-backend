@@ -5,6 +5,7 @@ type EnvironmentSource = Record<string, string | undefined>;
 export interface ValidatedEnvironment {
   nodeEnv: 'development' | 'test' | 'production';
   port: number;
+  host: '127.0.0.1' | '0.0.0.0';
   databaseUrl: string;
   redisUrl: string;
   storageRoot: string;
@@ -15,6 +16,9 @@ export interface ValidatedEnvironment {
   uploadTimeoutMs: number;
   maxConcurrentDownloads: number;
   downloadTimeoutMs: number;
+  clamdHost: string;
+  clamdPort: number;
+  scanTimeoutMs: number;
   corsOrigins: string[];
   jwtAccessSecret: string;
   jwtRefreshSecret: string;
@@ -94,13 +98,29 @@ export function validateEnvironment(
   if (!/^\d+$/.test(portValue) || port < 1 || port > 65535) {
     throw new Error('PORT must be an integer between 1 and 65535');
   }
+  const host =
+    source.HOST ?? (nodeEnv === 'production' ? '127.0.0.1' : '0.0.0.0');
+  if (host !== '127.0.0.1' && host !== '0.0.0.0')
+    throw new Error('HOST must be 127.0.0.1 or 0.0.0.0');
 
   const maxUploadBytes = integerLimit(
     source,
     'MAX_UPLOAD_BYTES',
     512 * 1024 * 1024,
     1,
-    1024 * 1024 * 1024 * 1024,
+    512 * 1024 * 1024,
+  );
+  const clamdHost = (source.CLAMD_HOST ?? '127.0.0.1').trim();
+  if (!/^[a-zA-Z0-9.-]+$/.test(clamdHost)) {
+    throw new Error('CLAMD_HOST must be a hostname or IPv4 address');
+  }
+  const clamdPort = integerLimit(source, 'CLAMD_PORT', 3310, 1, 65535);
+  const scanTimeoutMs = integerLimit(
+    source,
+    'SCAN_TIMEOUT_MS',
+    300_000,
+    1000,
+    900_000,
   );
   const projectQuotaBytes = integerLimit(
     source,
@@ -163,11 +183,14 @@ export function validateEnvironment(
     ) {
       throw new Error('CORS_ORIGINS must contain HTTP origins');
     }
+    if (nodeEnv === 'production' && url.protocol !== 'https:')
+      throw new Error('CORS_ORIGINS must use HTTPS in production');
   }
 
   return {
     nodeEnv: nodeEnv as ValidatedEnvironment['nodeEnv'],
     port,
+    host,
     databaseUrl: connectionUrl(source, 'DATABASE_URL', [
       'postgres:',
       'postgresql:',
@@ -181,6 +204,9 @@ export function validateEnvironment(
     uploadTimeoutMs,
     maxConcurrentDownloads,
     downloadTimeoutMs,
+    clamdHost,
+    clamdPort,
+    scanTimeoutMs,
     corsOrigins,
     jwtAccessSecret,
     jwtRefreshSecret,

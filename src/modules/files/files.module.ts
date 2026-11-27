@@ -18,6 +18,7 @@ import { FoldersModule } from '../folders/folders.module.js';
 import { FileTrashController } from './file-trash.controller.js';
 import { FileTrashService } from './file-trash.service.js';
 import { FileTrashReconciler } from './file-trash-reconciler.js';
+import { ScannerModule } from '../../infrastructure/scanner/scanner.module.js';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { FileTrashReconciler } from './file-trash-reconciler.js';
     FoldersModule,
     QuotasModule,
     StorageModule,
+    ScannerModule,
     DatabaseModule,
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 20 }]),
   ],
@@ -42,5 +44,6 @@ import { FileTrashReconciler } from './file-trash-reconciler.js';
     FileTrashReconciler,
     UploadReconciler,
   ],
+  exports: [FilesService, FileDownloadService],
 })
 export class FilesModule {}

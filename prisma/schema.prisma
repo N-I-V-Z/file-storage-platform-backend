@@ -13,10 +13,16 @@ model User {
   passwordHash String    @map("password_hash") @db.VarChar(255)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  role         UserRole  @default(USER)
   sessions     Session[]
   projects     Project[]
 
   @@map("users")
+}
+
+enum UserRole {
+  USER
+  ADMIN
 }
 
 model Session {
@@ -82,6 +88,7 @@ model StoredFile {
   reservationBytes BigInt           @map("reservation_bytes")
   sizeBytes        BigInt?          @map("size_bytes")
   sha256           String?          @db.VarChar(64)
+  scannedAt        DateTime?        @map("scanned_at") @db.Timestamptz(6)
   expiresAt        DateTime         @map("expires_at") @db.Timestamptz(6)
   createdAt        DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -89,6 +96,7 @@ model StoredFile {
   purgeAfter       DateTime?        @map("purge_after") @db.Timestamptz(6)
   project          Project          @relation(fields: [projectId], references: [id], onDelete: Restrict)
   folder           Folder?          @relation(fields: [projectId, folderId], references: [projectId, id], onDelete: Restrict)
+  shareLinks       ShareLink[]
 
   @@index([projectId, status])
   @@index([projectId, folderId, status])
@@ -126,4 +134,34 @@ model ApiKey {
   @@index([projectId])
   @@index([expiresAt])
   @@map("api_keys")
+}
+
+model ShareLink {
+  id        String    @id @default(uuid()) @db.Uuid
+  fileId    String    @map("file_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash") @db.VarChar(64)
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  file      StoredFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId, createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@map("share_links")
+}
+
+model AuditEvent {
+  id         String    @id @default(uuid()) @db.Uuid
+  projectId  String    @map("project_id") @db.Uuid
+  actorType  String    @map("actor_type") @db.VarChar(16)
+  actorId    String?   @map("actor_id") @db.Uuid
+  action     String    @db.VarChar(40)
+  resourceId String?   @map("resource_id") @db.Uuid
+  occurredAt DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  purgeAfter DateTime? @map("purge_after") @db.Timestamptz(6)
+
+  // No project FK: the history must outlive a deleted project for 90 days.
+  @@index([projectId, occurredAt(sort: Desc), id(sort: Desc)])
+  @@index([purgeAfter])
+  @@map("audit_events")
 }

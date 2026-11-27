@@ -53,6 +53,7 @@ export class FileTrashService {
       fileId,
       now,
       new Date(now.getTime() + RETENTION_MS),
+      ownerId,
     );
     if (!changed) throw new NotFoundException('File not found');
   }
@@ -65,14 +66,14 @@ export class FileTrashService {
     if (!file.purgeAfter || file.purgeAfter <= now) {
       throw new ConflictException('Trash retention has expired');
     }
-    const changed = await this.files.restore(projectId, fileId, now);
+    const changed = await this.files.restore(projectId, fileId, now, ownerId);
     if (!changed) throw new ConflictException('File can no longer be restored');
     return { id: fileId, status: 'ready' as const };
   }
 
   async purge(ownerId: string, projectId: string, fileId: string) {
     await this.projects.get(ownerId, projectId);
-    if (!(await this.files.claimPurge(projectId, fileId))) {
+    if (!(await this.files.claimPurge(projectId, fileId, ownerId))) {
       throw new NotFoundException('File not found in trash');
     }
     try {

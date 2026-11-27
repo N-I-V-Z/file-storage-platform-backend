@@ -5,6 +5,7 @@ import {
   readdir,
   rm,
   symlink,
+  writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -35,6 +36,10 @@ describe('FilesystemStorage', () => {
     ]);
     const id = randomUUID();
     await pipeline(Readable.from(['file bytes']), storage.createTemporary(id));
+    const temporary = storage.openTemporary(id);
+    const chunks: Buffer[] = [];
+    for await (const chunk of temporary) chunks.push(Buffer.from(chunk));
+    expect(Buffer.concat(chunks).toString()).toBe('file bytes');
     await storage.promote(id);
     expect(await readFile(storage.objectPath(id), 'utf8')).toBe('file bytes');
     const handle = await storage.openObject(id);
@@ -50,5 +55,21 @@ describe('FilesystemStorage', () => {
     await mkdir(target);
     await symlink(target, join(root, 'temporary'), 'junction');
     await expect(new FilesystemStorage(root).init()).rejects.toThrow();
+  });
+
+  it('reports temporary file count and bytes without reading file contents', async () => {
+    const storage = new FilesystemStorage(root);
+    await storage.init();
+    await writeFile(join(root, 'temporary', randomUUID()), '12345');
+    await writeFile(join(root, 'temporary', randomUUID()), 'abc');
+    expect(await storage.temporaryUsage()).toEqual({
+      bytes: 8n,
+      files: 2,
+      truncated: false,
+    });
+    expect(await storage.temporaryUsage(1)).toMatchObject({
+      files: 1,
+      truncated: true,
+    });
   });
 });

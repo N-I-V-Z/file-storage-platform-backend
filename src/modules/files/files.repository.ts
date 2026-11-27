@@ -3,6 +3,7 @@ import { PrismaService } from '../../infrastructure/database/prisma.service.js';
 import { Prisma } from '../../generated/prisma/client.js';
 import { FileListQueryDto } from './dto/file-list-query.dto.js';
 import type { StoredFileStatus } from '../../generated/prisma/enums.js';
+import { recordAudit } from '../audit/audit-writer.js';
 
 @Injectable()
 export class FilesRepository {
@@ -76,12 +77,32 @@ export class FilesRepository {
     return { items, total };
   }
 
-  async trash(projectId: string, fileId: string, now: Date, purgeAfter: Date) {
-    const changed = await this.prisma.storedFile.updateMany({
-      where: { id: fileId, projectId, status: 'READY' },
-      data: { status: 'TRASHED', trashedAt: now, purgeAfter },
+  async trash(
+    projectId: string,
+    fileId: string,
+    now: Date,
+    purgeAfter: Date,
+    ownerId: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.storedFile.updateMany({
+        where: { id: fileId, projectId, status: 'READY' },
+        data: { status: 'TRASHED', trashedAt: now, purgeAfter },
+      });
+      if (!changed.count) return false;
+      await tx.shareLink.updateMany({
+        where: { fileId, revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await recordAudit(tx, {
+        projectId,
+        actorType: 'USER',
+        actorId: ownerId,
+        action: 'FILE_TRASHED',
+        resourceId: fileId,
+      });
+      return true;
     });
-    return changed.count > 0;
   }
 
   findTrashed(projectId: string, fileId: string) {
@@ -91,33 +112,68 @@ export class FilesRepository {
     });
   }
 
-  async restore(projectId: string, fileId: string, now: Date) {
-    const changed = await this.prisma.storedFile.updateMany({
-      where: {
-        id: fileId,
+  async restore(projectId: string, fileId: string, now: Date, ownerId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.storedFile.updateMany({
+        where: {
+          id: fileId,
+          projectId,
+          status: 'TRASHED',
+          purgeAfter: { gt: now },
+        },
+        data: { status: 'READY', trashedAt: null, purgeAfter: null },
+      });
+      if (!changed.count) return false;
+      await recordAudit(tx, {
         projectId,
-        status: 'TRASHED',
-        purgeAfter: { gt: now },
-      },
-      data: { status: 'READY', trashedAt: null, purgeAfter: null },
+        actorType: 'USER',
+        actorId: ownerId,
+        action: 'FILE_RESTORED',
+        resourceId: fileId,
+      });
+      return true;
     });
-    return changed.count > 0;
   }
 
-  async claimPurge(projectId: string, fileId: string) {
-    const changed = await this.prisma.storedFile.updateMany({
-      where: { id: fileId, projectId, status: 'TRASHED' },
-      data: { status: 'PURGING' },
+  async claimPurge(projectId: string, fileId: string, ownerId: string) {
+    return this.prisma.$transaction(async (tx) => {
+      const changed = await tx.storedFile.updateMany({
+        where: { id: fileId, projectId, status: 'TRASHED' },
+        data: { status: 'PURGING' },
+      });
+      if (!changed.count) return false;
+      await recordAudit(tx, {
+        projectId,
+        actorType: 'USER',
+        actorId: ownerId,
+        action: 'FILE_PURGE_REQUESTED',
+        resourceId: fileId,
+      });
+      return true;
     });
-    return changed.count > 0;
   }
 
   async claimExpired(fileId: string, now: Date) {
-    const changed = await this.prisma.storedFile.updateMany({
-      where: { id: fileId, status: 'TRASHED', purgeAfter: { lte: now } },
-      data: { status: 'PURGING' },
+    return this.prisma.$transaction(async (tx) => {
+      const file = await tx.storedFile.findFirst({
+        where: { id: fileId, status: 'TRASHED', purgeAfter: { lte: now } },
+        select: { projectId: true },
+      });
+      if (!file) return false;
+      const changed = await tx.storedFile.updateMany({
+        where: { id: fileId, status: 'TRASHED', purgeAfter: { lte: now } },
+        data: { status: 'PURGING' },
+      });
+      if (!changed.count) return false;
+      await recordAudit(tx, {
+        projectId: file.projectId,
+        actorType: 'SYSTEM',
+        actorId: null,
+        action: 'FILE_PURGE_REQUESTED',
+        resourceId: fileId,
+      });
+      return true;
     });
-    return changed.count > 0;
   }
 
   findPurging(fileId: string) {
@@ -164,6 +220,13 @@ export class FilesRepository {
       await tx.project.update({
         where: { id: file.projectId },
         data: { usedBytes: { decrement: file.sizeBytes } },
+      });
+      await recordAudit(tx, {
+        projectId: file.projectId,
+        actorType: 'SYSTEM',
+        actorId: null,
+        action: 'FILE_PURGED',
+        resourceId: fileId,
       });
       return true;
     });

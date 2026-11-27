@@ -75,7 +75,7 @@ export class AuthService {
     return {
       accessToken,
       refreshCookie: `${sessionId}.${refreshSecret}`,
-      user: { id: user.id, email: user.email },
+      user: { id: user.id, email: user.email, role: user.role },
     };
   }
 
