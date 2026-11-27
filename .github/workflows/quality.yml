@@ -77,8 +77,8 @@ jobs:
           target: runtime
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/file-storage-platform-backend:latest
-            ${{ secrets.DOCKER_USERNAME }}/file-storage-platform-backend:${{ github.sha }}
+            nivz0911/file-storage-platform-backend:latest
+            nivz0911/file-storage-platform-backend:${{ github.sha }}
           cache-from: type=gha,scope=backend-runtime
           cache-to: type=gha,mode=max,scope=backend-runtime
       - uses: docker/build-push-action@v6
@@ -87,7 +87,7 @@ jobs:
           target: migrate
           push: true
           tags: |
-            ${{ secrets.DOCKER_USERNAME }}/file-storage-platform-backend-migrate:latest
-            ${{ secrets.DOCKER_USERNAME }}/file-storage-platform-backend-migrate:${{ github.sha }}
+            nivz0911/file-storage-platform-backend:migrate-latest
+            nivz0911/file-storage-platform-backend:migrate-${{ github.sha }}
           cache-from: type=gha,scope=backend-migrate
           cache-to: type=gha,mode=max,scope=backend-migrate
