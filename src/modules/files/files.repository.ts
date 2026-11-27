@@ -90,6 +90,10 @@ export class FilesRepository {
         data: { status: 'TRASHED', trashedAt: now, purgeAfter },
       });
       if (!changed.count) return false;
+      await tx.shareLink.updateMany({
+        where: { fileId, revokedAt: null },
+        data: { revokedAt: now },
+      });
       await recordAudit(tx, {
         projectId,
         actorType: 'USER',
