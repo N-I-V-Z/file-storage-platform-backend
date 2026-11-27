@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { lstat, mkdir, readFile, realpath, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { assertSeparate, postgresEnvironment, run, sha256 } from './common.mjs';
 
@@ -20,6 +20,12 @@ export async function restoreDrill({
   const targetRoot = resolve(target);
   assertSeparate(liveRoot, targetRoot);
   assertSeparate(backupRoot, targetRoot);
+  const effectiveTarget = join(
+    await realpath(dirname(targetRoot)),
+    basename(targetRoot),
+  );
+  assertSeparate(liveRoot, effectiveTarget);
+  assertSeparate(backupRoot, effectiveTarget);
   try {
     await stat(targetRoot);
     throw new Error('Restore target must not already exist');

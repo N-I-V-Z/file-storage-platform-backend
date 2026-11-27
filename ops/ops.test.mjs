@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -89,6 +96,36 @@ test('restore drill rejects changed bytes before creating a database or target',
     await assert.rejects(
       restoreDrill({ bundle, target: join(root, 'drill'), storageRoot }),
       /checksum mismatch/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('restore drill refuses a symlinked parent into live storage', async (context) => {
+  const root = await mkdtemp(join(tmpdir(), 'fsp-ops-'));
+  const live = join(root, 'live');
+  const bundle = join(root, 'bundle');
+  const alias = join(root, 'alias');
+  try {
+    await mkdir(live);
+    await mkdir(bundle);
+    try {
+      await symlink(
+        live,
+        alias,
+        process.platform === 'win32' ? 'junction' : 'dir',
+      );
+    } catch (error) {
+      if (error.code === 'EPERM') {
+        context.skip('Directory symlink unavailable');
+        return;
+      }
+      throw error;
+    }
+    await assert.rejects(
+      restoreDrill({ bundle, target: join(alias, 'drill'), storageRoot: live }),
+      /separate/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
