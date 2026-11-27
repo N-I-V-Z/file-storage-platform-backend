@@ -40,6 +40,10 @@ interface PendingUpload {
 export class FilesService {
   private activeUploads = 0;
 
+  getActiveUploads(): number {
+    return this.activeUploads;
+  }
+
   constructor(
     private readonly config: ConfigService<ValidatedEnvironment, true>,
     @Inject(STORAGE_ADAPTER) private readonly storage: StorageAdapter,

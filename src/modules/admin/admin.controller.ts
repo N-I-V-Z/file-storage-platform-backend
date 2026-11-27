@@ -1,6 +1,7 @@
 import { Controller, Get, Header, Query, UseGuards } from '@nestjs/common';
 import { AdminGuard } from './admin.guard.js';
 import { AdminService } from './admin.service.js';
+import { OperationsService } from './operations.service.js';
 import {
   AdminAuditQueryDto,
   AdminListQueryDto,
@@ -9,7 +10,16 @@ import {
 @Controller('admin')
 @UseGuards(AdminGuard)
 export class AdminController {
-  constructor(private readonly admin: AdminService) {}
+  constructor(
+    private readonly admin: AdminService,
+    private readonly operations: OperationsService,
+  ) {}
+
+  @Get('operations')
+  @Header('Cache-Control', 'private, no-store')
+  operationsSnapshot() {
+    return this.operations.snapshot();
+  }
 
   @Get('overview')
   @Header('Cache-Control', 'private, no-store')

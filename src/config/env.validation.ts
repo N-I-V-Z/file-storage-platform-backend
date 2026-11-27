@@ -5,6 +5,7 @@ type EnvironmentSource = Record<string, string | undefined>;
 export interface ValidatedEnvironment {
   nodeEnv: 'development' | 'test' | 'production';
   port: number;
+  host: '127.0.0.1' | '0.0.0.0';
   databaseUrl: string;
   redisUrl: string;
   storageRoot: string;
@@ -97,6 +98,10 @@ export function validateEnvironment(
   if (!/^\d+$/.test(portValue) || port < 1 || port > 65535) {
     throw new Error('PORT must be an integer between 1 and 65535');
   }
+  const host =
+    source.HOST ?? (nodeEnv === 'production' ? '127.0.0.1' : '0.0.0.0');
+  if (host !== '127.0.0.1' && host !== '0.0.0.0')
+    throw new Error('HOST must be 127.0.0.1 or 0.0.0.0');
 
   const maxUploadBytes = integerLimit(
     source,
@@ -178,11 +183,14 @@ export function validateEnvironment(
     ) {
       throw new Error('CORS_ORIGINS must contain HTTP origins');
     }
+    if (nodeEnv === 'production' && url.protocol !== 'https:')
+      throw new Error('CORS_ORIGINS must use HTTPS in production');
   }
 
   return {
     nodeEnv: nodeEnv as ValidatedEnvironment['nodeEnv'],
     port,
+    host,
     databaseUrl: connectionUrl(source, 'DATABASE_URL', [
       'postgres:',
       'postgresql:',

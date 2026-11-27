@@ -12,4 +12,9 @@ export interface StorageAdapter {
   promote(id: string): Promise<void>;
   remove(id: string): Promise<void>;
   freeBytes(): Promise<bigint>;
+  temporaryUsage(): Promise<{
+    bytes: bigint;
+    files: number;
+    truncated: boolean;
+  }>;
 }
